@@ -1,0 +1,20 @@
+{
+  "id": "example",
+  "name": "Example VPN",
+  "process": {
+    "executablePaths": [
+      "/Applications/Example VPN.app/Contents/Resources/example-tunnel",
+      "~/Library/Application Support/Example VPN/bin/example-tunnel"
+    ]
+  },
+  "statusFile": {
+    "path": "~/Library/Application Support/Example VPN/state.json",
+    "connected": "/session/active",
+    "connecting": "/session/pending",
+    "tunnelIP": "/session/address",
+    "dns": "/session/resolvers"
+  },
+  "tunnel": {
+    "minRoutes": 10
+  }
+}

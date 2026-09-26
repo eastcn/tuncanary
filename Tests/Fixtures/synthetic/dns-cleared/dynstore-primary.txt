@@ -1,0 +1,31 @@
+PrimaryService=8F3C2A10-5B7E-4D21-9C66-0A1B2C3D4E5F
+<dictionary> {
+  PrimaryInterface : en0
+  PrimaryService : 8F3C2A10-5B7E-4D21-9C66-0A1B2C3D4E5F
+  Router : 192.168.1.1
+}
+<dictionary> {
+  ServerAddresses : <array> {
+    0 : 192.168.1.1
+  }
+  __CONFIGURATION_ID__ : Default: 8F3C2A10-5B7E-4D21-9C66-0A1B2C3D4E5F 0
+  __FLAGS__ : 2
+  __IF_INDEX__ : 15
+  __ORDER__ : 0
+}
+<dictionary> {
+  ExceptionsList : <array> {
+  }
+  HTTPEnable : 0
+  HTTPSEnable : 0
+  ProxyAutoConfigEnable : 0
+  SOCKSEnable : 0
+  ServerAddresses : <array> {
+    0 : 
+  }
+}
+<dictionary> {
+  ServerAddresses : <array> {
+    0 : 192.168.1.1
+  }
+}

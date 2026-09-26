@@ -1,0 +1,13 @@
+== State:/Network/Service/8F3C2A10-5B7E-4D21-9C66-0A1B2C3D4E5F/DNS
+<dictionary> {
+  ServerAddresses : <array> {
+    0 : 192.168.1.1
+  }
+}
+== State:/Network/Service/D2E4F6A8-1357-4B9D-8ACE-246813579BDF/DNS
+<dictionary> {
+  InterfaceName : utun3
+  ServerAddresses : <array> {
+    0 : 100.100.100.100
+  }
+}

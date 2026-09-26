@@ -1,0 +1,15 @@
+{
+  "session": {
+    "active": false,
+    "pending": false,
+    "address": "10.9.0.2",
+    "resolvers": [
+      "10.9.0.53",
+      "10.9.0.54"
+    ]
+  },
+  "profile": {
+    "name": "synthetic-profile",
+    "token": "synthetic-token"
+  }
+}

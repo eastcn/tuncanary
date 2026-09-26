@@ -1,0 +1,8 @@
+  PID  PPID USER             STARTED                      COMM
+  812     1 root             Mon Jan  5 09:30:00 2026     /Library/PrivilegedHelperTools/io.github.clash-verge-rev.clash-verge-rev.service.bundle/Contents/MacOS/clash-verge-service
+ 2210     1 user             Mon Jan  5 09:30:00 2026     /Applications/Clash Verge.app/Contents/MacOS/clash-verge
+ 2215   812 root             Mon Jan  5 09:30:00 2026     /Library/Application Support/clash-verge-service/cores/verge-mihomo
+ 3101     1 user             Mon Jan  5 09:30:00 2026     /Applications/Example VPN.app/Contents/MacOS/Example VPN
+ 3102  3101 user             Mon Jan  5 09:30:00 2026     /Applications/Example VPN.app/Contents/Frameworks/Example VPN Helper.app/Contents/MacOS/Example VPN Helper
+ 3105     1 user             Mon Jan  5 09:30:00 2026     ~/Library/Application Support/Example VPN/agent/example-agent
+ 7300  3101 root             Mon Jan  5 09:30:00 2026     /Applications/Example VPN.app/Contents/Resources/example-tunnel
