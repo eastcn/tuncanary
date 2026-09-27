@@ -64,6 +64,10 @@ public struct DNSGuardRunner: Sendable {
     /// 读回的次数与间隔：写入后系统需要一点时间把新值同步到 `Setup:` 层和解析器。
     public static let readBackAttempts = 5
     public static let readBackInterval: TimeInterval = 1
+    /// 两次采样显示 VPN 正在切换时，在同一次运行里重新采样的次数与间隔。
+    /// 切换刚结束就能写入，不必等下一次定时运行。
+    public static let transitionRetries = 3
+    public static let transitionRetryInterval: TimeInterval = 5
 
     public var config: DNSGuardConfig
     public var sampler: DNSGuardSampling
@@ -95,9 +99,15 @@ public struct DNSGuardRunner: Sendable {
 
     public func run() async -> DNSGuardRunReport {
         var state = store.loadState()
-        let first = await sampler.sample()
+        var first = await sampler.sample()
         await sleep(config.sampleDelaySeconds)
-        let second = await sampler.sample()
+        var second = await sampler.sample()
+        // 切换中：用上一次的第二个样本和新样本重新比较。仍然要求两次一致才写。
+        for _ in 0..<Self.transitionRetries where DNSGuardDecider.isTransition(first, second) {
+            await sleep(Self.transitionRetryInterval)
+            first = second
+            second = await sampler.sample()
+        }
 
         // 两次采样 VPN 都已断开：解除连接期接管的停用，清空连接期写入记录。
         if first.vpn == .disconnected && second.vpn == .disconnected {

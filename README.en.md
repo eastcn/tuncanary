@@ -71,7 +71,7 @@ Before turning on the connected phase, make sure the proxy sends intranet domain
 How it behaves:
 
 - A LaunchDaemon runs it when the system network configuration changes and every 30 seconds. Each run makes one decision and exits.
-- It samples twice, 3 seconds apart, and writes only if both samples agree. It never writes while the VPN is switching or its state is unconfirmed.
+- It samples twice, 3 seconds apart, and writes only if both samples agree. It never writes while the VPN is switching or its state is unconfirmed. During a switch it samples again every 5 seconds, up to 3 times in the same run, so it can write as soon as the switch settles.
 - It relies on VPN adapters to tell the VPN state. With no adapters, or an invalid adapter file, it never writes.
 - It changes only the server list in the primary service's saved DNS and keeps the other DNS keys. It touches only allowed service types (Wi-Fi and Ethernet by default), never VPN services.
 - After writing, it reads back the saved value and the default resolver; only a match counts as success. After 3 consecutive failures it pauses for 10 minutes.

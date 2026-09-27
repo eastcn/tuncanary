@@ -278,6 +278,29 @@ enum DNSGuardDaemonTests {
                 t.expectEqual(stubs.events.count, 1, "结果没变，只更新状态文件")
                 t.expectEqual(stubs.state.lastRun?.date, now.addingTimeInterval(30))
             },
+            TestCase("运行：VPN 切换中时在同一次运行里重新采样") { t in
+                let stubs = Stubs()
+                stubs.samples = [sample(vpn: .connected, saved: ["10.9.0.53"]), sample(vpn: .disconnected, saved: []),
+                                 sample(vpn: .disconnected, saved: [])]
+                stubs.readBacks = [read(saved: [], resolver: nil), read(saved: target, resolver: target)]
+                let sleeps = Sleeps()
+                let report = await runner(stubs, sleeps: sleeps).run()
+                t.expectEqual(sleeps.values, [3, 5], "第一对不一致，等 5 秒再采一次")
+                t.expectEqual(report.event, DNSGuardEvent(date: now, phase: .disconnected, outcome: .written))
+                t.expectEqual(stubs.events.map(\.outcome), [.written])
+
+                let unstable = Stubs()
+                unstable.samples = [sample(vpn: .unconfirmed)]
+                let waits = Sleeps()
+                let skipped = await runner(unstable, sleeps: waits).run()
+                t.expectEqual(waits.values, [3, 5, 5, 5], "最多重试 3 次")
+                t.expectEqual(skipped.event.reason, "VPN 状态未确认")
+                t.expectEqual(unstable.writes, [])
+
+                t.expect(DNSGuardDecider.isTransition(sample(saved: []), sample(saved: ["192.168.1.1"])))
+                t.expect(!DNSGuardDecider.isTransition(sample(tun: false), sample()), "TUN 状态变化不算 VPN 切换")
+                t.expect(!DNSGuardDecider.isTransition(sample(id: "S1"), sample(id: "S2", saved: ["192.168.1.1"])))
+            },
             TestCase("运行：写入后读回一致才算成功") { t in
                 let stubs = Stubs()
                 stubs.samples = [sample(saved: [])]

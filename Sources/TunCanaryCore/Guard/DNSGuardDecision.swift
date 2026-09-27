@@ -102,6 +102,16 @@ public enum DNSGuardDecider {
     /// 连接期写入次数的统计窗口（秒）。
     public static let takeoverWindow: TimeInterval = 600
 
+    /// 两次采样是否处在 VPN 切换过程中：VPN 状态不一致或未确认，或同一服务保存的 DNS 发生变化。
+    public static func isTransition(_ first: DNSGuardSample, _ second: DNSGuardSample) -> Bool {
+        if first.vpn != second.vpn || second.vpn == .unconfirmed || second.vpn == .switching { return true }
+        if let a = first.service.value, let b = second.service.value, a.serviceID == b.serviceID,
+           !DNSList.sameSet(a.savedDNS, b.savedDNS) {
+            return true
+        }
+        return false
+    }
+
     /// 两次采样都满足条件才写入。检查顺序：TUN、主网络服务、VPN、保存的 DNS、退避，阶段 B 再检查写入次数和内网探针。
     public static func decide(first: DNSGuardSample, second: DNSGuardSample, config: DNSGuardConfig,
                               state: DNSGuardState, probe: DNSGuardProbeResult = .notRun,
