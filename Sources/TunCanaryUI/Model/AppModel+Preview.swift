@@ -43,7 +43,10 @@ extension AppModel {
         let data = PreviewData.self
         var settings = scenario == .intranetNotConfigured ? AppSettings(expectedDNS: ["119.29.29.29"]) : data.settings
         if scenario == .proxyTakeover { settings.connectedDNSRule = .proxyTakeover }
-        if scenario == .googleWarning { settings.proxyDiagnosticsEnabled = true }
+        if scenario == .googleWarning {
+            settings.proxyDiagnosticsEnabled = true
+            settings.egressTargets = PreviewData.egressTargets
+        }
         let model = AppModel(
             settings: settings,
             actions: actions,
@@ -65,6 +68,7 @@ extension AppModel {
             let faults = ConnectivityTracker.faults(failingSiteIDs: [SiteCatalog.google.id], context: .consecutiveRounds)
             model.apply(local: local, connectivityFaults: faults, checkedAt: data.now.addingTimeInterval(-35))
             model.siteHistory = data.history(google: .failingTwice)
+            model.egressResults = data.egressResults()
             model.intranetDecision = .vpnDisconnected
             if scenario == .googleWarning {
                 let connection = ProxyLogConnection(
@@ -116,6 +120,29 @@ enum PreviewData {
     /// 2026-09-26 12:00:00 UTC。
     static let now = Date(timeIntervalSince1970: 1_790_424_000)
     static let timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+    /// 出口检测目标：全部内置项加两个虚构的自定义域名。
+    static let egressTargets: [EgressIPTarget] = EgressIPTarget.builtIns +
+        ["edge.example.com", "plain.example.org"].compactMap(EgressIPTarget.custom)
+
+    /// 出口检测结果：自定义域名一个成功、一个不经 Cloudflare。
+    static func egressResults() -> [EgressIPResult] {
+        let at = now.addingTimeInterval(-40)
+        return [
+            EgressIPResult(target: .cloudflare, checkedAt: at, ip: "2001:db8:85a3::8a2e:370:7334",
+                           ipVersion: .ipv6, location: "JP", failure: nil),
+            EgressIPResult(target: .claude, checkedAt: at, ip: "203.0.113.24", ipVersion: .ipv4,
+                           location: "US", failure: nil),
+            EgressIPResult(target: .chatgpt, checkedAt: at, ip: "203.0.113.24", ipVersion: .ipv4,
+                           location: "US", failure: nil),
+            EgressIPResult(target: .taobao, checkedAt: at, ip: "198.51.100.8", ipVersion: .ipv4,
+                           location: "CN · 浙江 杭州", failure: nil),
+            EgressIPResult(target: egressTargets[4], checkedAt: at, ip: "198.51.100.37", ipVersion: .ipv4,
+                           location: "SG", failure: nil),
+            EgressIPResult(target: egressTargets[5], checkedAt: at, ip: nil, ipVersion: nil,
+                           location: nil, failure: .httpStatus(404)),
+        ]
+    }
+
     static let settings = AppSettings(intranetURL: URL(string: "https://intranet.corp.example/health"),
                                       expectedDNS: ["119.29.29.29"],
                                       checkPages: [CheckPage(name: "出口检测", url: URL(string: "https://check.example.test/ip")!),

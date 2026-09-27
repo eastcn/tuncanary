@@ -1,7 +1,7 @@
 import SwiftUI
 import TunCanaryCore
 
-/// 弹窗主页：总体状态、操作、四张状态卡、站点结果、工具入口与底栏。
+/// 弹窗主页：总体状态、操作、本机状态、站点结果、出口 IP、最近事件、工具入口与底栏。
 struct MainPanel: View {
     @ObservedObject var model: AppModel
     let maxScrollHeight: CGFloat?
@@ -17,31 +17,38 @@ struct MainPanel: View {
                 .padding(.bottom, 12)
             Divider()
             BoundedScroll(maxHeight: maxScrollHeight) {
-                VStack(alignment: .leading, spacing: 8) {
-                    SectionTitle(title: "本机状态")
-                    ForEach(model.cards) { card in
-                        StatusCardView(
-                            card: card,
-                            expanded: model.expandedCards.contains(card.kind),
-                            toggle: { model.toggleEvidence(card.kind) },
-                            showRecoveryLink: card.faultKey == .dnsNotRestored,
-                            openRecovery: { model.openRecovery() },
-                            timeZone: model.timeZone)
+                VStack(alignment: .leading, spacing: PopoverMetrics.sectionSpacing) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        SectionTitle(title: "本机状态")
+                            .padding(.horizontal, 2)
+                        GroupCard {
+                            ForEach(model.cards) { card in
+                                StatusRowView(
+                                    card: card,
+                                    expanded: model.expandedCards.contains(card.kind),
+                                    toggle: { model.toggleEvidence(card.kind) },
+                                    showRecoveryLink: card.faultKey == .dnsNotRestored,
+                                    openRecovery: { model.openRecovery() },
+                                    timeZone: model.timeZone)
+                            }
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionTitle(title: "站点连通性", trailing: "延迟中位数 · 最近 5 次")
+                            .padding(.horizontal, 2)
+                        if model.settings.enabledSites.isEmpty {
+                            Text("未启用公开站点")
+                                .font(Typography.caption).foregroundColor(.secondary)
+                                .padding(.horizontal, 2)
+                        }
+                        ForEach(model.siteGroups) { group in
+                            SiteGroupView(group: group, onDiagnose: { model.diagnoseSite($0) })
+                        }
                     }
                     EgressIPSection(model: model)
-                        .padding(.top, 8)
-                    SectionTitle(title: "站点连通性", trailing: "延迟中位数 · 最近 5 次")
-                        .padding(.top, 8)
-                    if model.settings.enabledSites.isEmpty {
-                        Text("未启用公开站点")
-                            .font(.system(size: 11.5)).foregroundColor(.secondary)
+                    GroupCard {
+                        RecentEventsRow(model: model)
                     }
-                    ForEach(model.siteGroups) { group in
-                        SiteGroupView(group: group, onDiagnose: { model.diagnoseSite($0) })
-                            .padding(.bottom, 2)
-                    }
-                    RecentEventsSection(model: model)
-                        .padding(.top, 8)
                 }
                 .padding(.horizontal, PopoverMetrics.padding)
                 .padding(.vertical, 12)
@@ -49,7 +56,7 @@ struct MainPanel: View {
             Divider()
             ToolsSection(model: model)
                 .padding(.horizontal, PopoverMetrics.padding)
-                .padding(.vertical, 10)
+                .padding(.vertical, 8)
             Divider()
             FooterBar(model: model)
         }
@@ -127,10 +134,11 @@ struct ActionBar: View {
                     if model.copiedItem == .diagnostics {
                         Label("已复制", systemImage: "checkmark")
                     } else {
-                        Label("复制脱敏诊断摘要", systemImage: "doc.on.doc")
+                        Label("复制诊断", systemImage: "doc.on.doc")
                     }
                 }
                 .buttonStyle(PillButtonStyle())
+                .accessibilityLabel(Text("复制脱敏诊断摘要"))
                 .help("复制不含 VPN 站点 URL、私有 IP 和主目录路径的诊断摘要")
                 Spacer(minLength: 0)
             }
@@ -142,7 +150,7 @@ struct ActionBar: View {
 }
 
 /// 最近事件：默认收起；展开后按时间倒序显示最多 10 条。
-struct RecentEventsSection: View {
+struct RecentEventsRow: View {
     @ObservedObject var model: AppModel
 
     static let visibleLimit = 10
@@ -152,24 +160,11 @@ struct RecentEventsSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button {
-                model.toggleRecentEvents()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: model.showsRecentEvents ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(.secondary)
-                        .frame(width: 10)
-                    SectionTitle(title: "最近事件",
-                                 trailing: model.recentEvents.isEmpty ? "暂无" : "\(model.recentEvents.count) 条")
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityValue(model.showsRecentEvents ? "已展开" : "已收起")
-
-            if model.showsRecentEvents && !events.isEmpty {
+        DisclosureRow(title: "最近事件",
+                      trailing: model.recentEvents.isEmpty ? "暂无" : "\(model.recentEvents.count) 条",
+                      isExpanded: model.showsRecentEvents,
+                      toggle: { model.toggleRecentEvents() }) {
+            if !events.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(Array(events.enumerated()), id: \.offset) { index, event in
                         if index > 0 { Divider().padding(.leading, 10) }
@@ -212,41 +207,57 @@ struct RecentEventRow: View {
     }
 }
 
-/// 手动恢复步骤与两个检测页入口。
+/// 工具入口：手动恢复步骤与检测页排成一行（超过 3 个时排成两行）。需要恢复时“恢复步骤”用红色加粗突出。
 struct ToolsSection: View {
     @ObservedObject var model: AppModel
 
+    private enum Item: Hashable {
+        case recovery
+        case page(Int)
+    }
+
+    private var rows: [[Item]] {
+        let items = [Item.recovery] + model.settings.checkPages.indices.map(Item.page)
+        guard items.count > 3 else { return [items] }
+        return stride(from: 0, to: items.count, by: 2).map { Array(items[$0..<min($0 + 2, items.count)]) }
+    }
+
     var body: some View {
         VStack(spacing: 6) {
-            Button {
-                model.openRecovery()
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "list.number")
-                        .frame(width: 16)
-                        .foregroundColor(model.suggestsRecovery ? StatusTone.critical.textColor : .secondary)
-                    Text("查看手动恢复步骤")
-                        .fontWeight(model.suggestsRecovery ? .semibold : .regular)
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.secondary)
-                }
-            }
-            .buttonStyle(RowButtonStyle())
-
-            if !model.settings.checkPages.isEmpty {
+            ForEach(rows, id: \.self) { row in
                 HStack(spacing: 6) {
-                    ForEach(Array(model.settings.checkPages.enumerated()), id: \.offset) { _, page in
-                        LinkRow(title: page.name, icon: "safari") { model.open(page.url) }
-                    }
+                    ForEach(row, id: \.self) { item($0) }
                 }
             }
         }
     }
+
+    @ViewBuilder private func item(_ item: Item) -> some View {
+        switch item {
+        case .recovery:
+            Button {
+                model.openRecovery()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "list.number")
+                        .foregroundColor(model.suggestsRecovery ? StatusTone.critical.textColor : .secondary)
+                    Text("恢复步骤")
+                        .fontWeight(model.suggestsRecovery ? .semibold : .regular)
+                        .foregroundColor(model.suggestsRecovery ? StatusTone.critical.textColor : .primary)
+                        .lineLimit(1)
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(RowButtonStyle())
+            .help("查看手动恢复步骤")
+        case .page(let index):
+            let page = model.settings.checkPages[index]
+            LinkRow(title: page.name, icon: "safari") { model.open(page.url) }
+        }
+    }
 }
 
-/// 外部检测页入口。
+/// 外部检测页入口：右上箭头表示在浏览器中打开。
 struct LinkRow: View {
     let title: String
     let icon: String
@@ -254,20 +265,19 @@ struct LinkRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) {
+            HStack(spacing: 4) {
                 Image(systemName: icon)
                     .foregroundColor(.secondary)
-                    .frame(width: 14)
                 Text(title)
                     .lineLimit(1)
-                Spacer(minLength: 2)
                 Image(systemName: "arrow.up.right")
-                    .font(.system(size: 9.5, weight: .semibold))
+                    .font(.system(size: 8.5, weight: .semibold))
                     .foregroundColor(.secondary)
             }
+            .frame(maxWidth: .infinity)
         }
         .buttonStyle(RowButtonStyle())
-        .help("在浏览器中打开")
+        .help("在浏览器中打开 \(title)")
     }
 }
 

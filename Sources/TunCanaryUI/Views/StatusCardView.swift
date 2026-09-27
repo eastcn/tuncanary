@@ -1,8 +1,9 @@
 import SwiftUI
 import TunCanaryCore
 
-/// 一张状态卡：结论常显，证据可以展开查看。
-struct StatusCardView: View {
+/// 本机状态的一行：正常时标题与结论排成一行；非正常时结论、提示和恢复入口另起一行完整显示。
+/// 点整行展开或收起证据。
+struct StatusRowView: View {
     let card: StatusCard
     let expanded: Bool
     let toggle: () -> Void
@@ -12,8 +13,9 @@ struct StatusCardView: View {
     var timeZone: TimeZone = .current
 
     private var tone: StatusTone { StatusTone(card.severity) }
+    private var isOK: Bool { card.severity == .ok }
 
-    /// 证据：卡片证据之后附守护进程的情况。未安装时只在这里出现，不占卡片正文。
+    /// 证据：卡片证据之后附守护进程的情况。未安装时只在这里出现，不占正文。
     private var evidence: [String] {
         guard let summary = card.dnsGuard else { return card.evidence }
         if !summary.installed && summary.failureReason == nil { return card.evidence + [summary.statusText] }
@@ -23,41 +25,50 @@ struct StatusCardView: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 9) {
-            SeverityBadge(severity: card.severity, size: 16)
-                .padding(.top, 1)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
+        VStack(alignment: .leading, spacing: 3) {
+            Button(action: toggle) {
+                HStack(alignment: .center, spacing: 8) {
+                    SeverityBadge(severity: card.severity, size: 14)
                     Text(card.title)
                         .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundColor(.primary)
                         .lineLimit(1)
-                    Spacer(minLength: 4)
-                    if !evidence.isEmpty {
-                        Button(action: toggle) {
-                            HStack(spacing: 3) {
-                                Text(expanded ? "收起" : "证据 \(evidence.count)")
-                                Image(systemName: "chevron.down")
-                                    .font(.system(size: 8.5, weight: .bold))
-                                    .rotationEffect(.degrees(expanded ? 180 : 0))
-                            }
-                            .font(.system(size: 11))
+                        .layoutPriority(2)
+                    Spacer(minLength: 6)
+                    if isOK {
+                        Text(card.conclusion)
+                            .font(Typography.body)
                             .foregroundColor(.secondary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1)
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(Text(expanded ? "收起\(card.title)证据" : "展开\(card.title)证据"))
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .help(card.conclusion)
+                    }
+                    if !evidence.isEmpty {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8.5, weight: .bold))
+                            .foregroundColor(.secondary)
+                            .rotationEffect(.degrees(expanded ? 180 : 0))
+                            .frame(width: 10)
                     }
                 }
-                Text(card.conclusion)
-                    .font(.system(size: 12))
-                    .foregroundColor(card.severity == .ok ? .secondary : tone.textColor)
-                    .fixedSize(horizontal: false, vertical: true)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(evidence.isEmpty)
+            .accessibilityLabel(Text("\(card.title)，\(card.severity.displayName)，\(card.conclusion)"))
+            .accessibilityHint(Text(evidence.isEmpty ? "" : (expanded ? "收起证据" : "展开证据")))
+
+            VStack(alignment: .leading, spacing: 3) {
+                if !isOK {
+                    Text(card.conclusion)
+                        .font(Typography.body)
+                        .foregroundColor(tone.textColor)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if let hint = card.hint {
                     Text("提示：\(hint)")
-                        .font(.system(size: 11.5))
-                        .foregroundColor(card.severity == .ok ? .secondary : .primary.opacity(0.85))
+                        .font(Typography.caption)
+                        .foregroundColor(isOK ? .secondary : .primary.opacity(0.85))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if showRecoveryLink {
@@ -72,7 +83,6 @@ struct StatusCardView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .padding(.top, 1)
                 }
                 if let summary = card.dnsGuard, summary.installed || summary.failureReason != nil {
                     DNSGuardLines(summary: summary, timeZone: timeZone)
@@ -88,17 +98,16 @@ struct StatusCardView: View {
                             }
                         }
                     }
-                    .font(.system(size: 11.5))
+                    .font(Typography.caption)
                     .foregroundColor(.secondary)
                     .textSelection(.enabled)
-                    .padding(.top, 3)
+                    .padding(.top, 1)
                 }
             }
+            .padding(.leading, 22)
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .cardBackground(tone)
+        .rowPadding()
+        .background(isOK ? Color.clear : tone.cardFill)
         .accessibilityElement(children: .contain)
     }
 }

@@ -55,6 +55,17 @@ public struct SettingsDraft: Sendable, Equatable {
         }
     }
 
+    /// 自定义出口检测域名的编辑行。
+    public struct EgressHostDraft: Sendable, Equatable, Identifiable {
+        public let id: UUID
+        public var host: String
+
+        public init(host: String = "") {
+            id = UUID()
+            self.host = host
+        }
+    }
+
     public struct SiteErrors: Sendable, Equatable {
         public var id: String?
         public var name: String?
@@ -78,8 +89,15 @@ public struct SettingsDraft: Sendable, Equatable {
     public var manualProcessName: String
     public var canaryHost: String
     public var checkPages: [CheckPageDraft]
+    /// 打开的可选内置出口目标（Cloudflare 始终检测，不在其中）。
+    public var enabledEgressBuiltIns: Set<EgressIPTarget>
     /// “检测出口”是否同时访问 claude.ai。
-    public var egressIncludesClaude: Bool
+    public var egressIncludesClaude: Bool {
+        get { enabledEgressBuiltIns.contains(.claude) }
+        set { setEgressBuiltIn(.claude, enabled: newValue) }
+    }
+    /// 自定义出口检测域名（经 Cloudflare 的站点）。
+    public var customEgressHosts: [EgressHostDraft]
     public var notificationsEnabled: Bool
     public var localCheckInterval: String
     public var lightProbeInterval: String
@@ -116,7 +134,9 @@ public struct SettingsDraft: Sendable, Equatable {
         self.manualProcessName = manualProxy.coreProcessName
         self.canaryHost = canaryHost
         self.checkPages = checkPages.map { CheckPageDraft(name: $0.name, url: $0.url.absoluteString) }
-        self.egressIncludesClaude = egressTargets.contains(.claude)
+        let effective = AppSettings(egressTargets: egressTargets).effectiveEgressTargets
+        self.enabledEgressBuiltIns = Set(effective.filter { $0.isBuiltIn && $0 != .cloudflare })
+        self.customEgressHosts = effective.filter { !$0.isBuiltIn }.map { EgressHostDraft(host: $0.host) }
         self.notificationsEnabled = notificationsEnabled
         self.localCheckInterval = localCheckInterval
         self.lightProbeInterval = lightProbeInterval
@@ -172,6 +192,33 @@ public struct SettingsDraft: Sendable, Equatable {
         sites.append(SiteDraft(site: site))
     }
 
+    public mutating func setEgressBuiltIn(_ target: EgressIPTarget, enabled: Bool) {
+        guard target.isBuiltIn, target != .cloudflare else { return }
+        if enabled { enabledEgressBuiltIns.insert(target) } else { enabledEgressBuiltIns.remove(target) }
+    }
+
+    /// 加入一个自定义出口检测域名；输入无效、重复或已满时不加，返回错误信息。
+    @discardableResult
+    public mutating func addEgressHost(_ text: String) -> String? {
+        guard customEgressHosts.count < EgressIPTarget.maxCustom else {
+            return SettingsValidationError.tooManyEgressTargets.message
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let target = EgressIPTarget.custom(trimmed) else {
+            return "“\(trimmed)”不是有效的域名（例如 chatgpt.com）"
+        }
+        if let builtIn = target.matchingBuiltIn { return Self.builtInHostMessage(builtIn) }
+        let existing = customEgressHosts.compactMap { EgressIPTarget.custom($0.host)?.host }
+        guard !existing.contains(target.host) else { return "“\(target.host)”已在出口检测目标中" }
+        customEgressHosts.append(EgressHostDraft(host: target.host))
+        return nil
+    }
+
+    static func builtInHostMessage(_ target: EgressIPTarget) -> String {
+        target == .cloudflare ? "“\(target.host)”是内置目标，始终检测"
+            : "“\(target.host)”是内置目标，请打开上方的“\(target.displayName)”"
+    }
+
     public mutating func restoreDefaultSites() {
         sites = SiteCatalog.defaultSites.map(SiteDraft.init(site:))
     }
@@ -187,6 +234,8 @@ public struct SettingsDraft: Sendable, Equatable {
         public var canaryHostError: String?
         /// 按检测页行下标的错误。
         public var checkPageErrors: [Int: String] = [:]
+        /// 按自定义出口域名行下标的错误。
+        public var egressHostErrors: [Int: String] = [:]
         public var localCheckIntervalError: String?
         public var lightProbeIntervalError: String?
         public var siteCountError: String?
@@ -195,6 +244,30 @@ public struct SettingsDraft: Sendable, Equatable {
         public var settings: AppSettings?
 
         public var isValid: Bool { settings != nil }
+
+        /// 有错误的设置分栏。
+        public var tabsWithErrors: Set<SettingsTab> {
+            var tabs: Set<SettingsTab> = []
+            if intranetURLError != nil || tailnetTargetError != nil || !checkPageErrors.isEmpty ||
+                !egressHostErrors.isEmpty ||
+                siteCountError != nil || !siteErrors.isEmpty {
+                tabs.insert(.sites)
+            }
+            if expectedDNSError != nil || manualFakeIPRangeError != nil || manualDNSPortError != nil ||
+                manualProcessNameError != nil || canaryHostError != nil {
+                tabs.insert(.proxyDNS)
+            }
+            if localCheckIntervalError != nil || lightProbeIntervalError != nil {
+                tabs.insert(.general)
+            }
+            return tabs
+        }
+
+        /// 按分栏顺序排列的第一个有错误的分栏。
+        public var firstTabWithErrors: SettingsTab? {
+            let tabs = tabsWithErrors
+            return SettingsTab.allCases.first { tabs.contains($0) }
+        }
     }
 
     public func validate() -> Validation {
@@ -245,6 +318,22 @@ public struct SettingsDraft: Sendable, Equatable {
                 pages.append(CheckPage(name: name, url: url))
             } else {
                 validation.checkPageErrors[index] = "名称须为 1–20 个字符，URL 须为含主机名的 http 或 https 地址"
+            }
+        }
+        var customEgress: [EgressIPTarget] = []
+        var egressHosts = Set<String>()
+        for (index, draft) in customEgressHosts.enumerated() {
+            let text = draft.host.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let target = EgressIPTarget.custom(text) {
+                if let builtIn = target.matchingBuiltIn {
+                    validation.egressHostErrors[index] = Self.builtInHostMessage(builtIn)
+                } else if egressHosts.insert(target.host).inserted {
+                    customEgress.append(target)
+                } else {
+                    validation.egressHostErrors[index] = "“\(target.host)”已在出口检测目标中"
+                }
+            } else {
+                validation.egressHostErrors[index] = "“\(text)”不是有效的域名（例如 chatgpt.com）"
             }
         }
         let host = canaryHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -304,6 +393,7 @@ public struct SettingsDraft: Sendable, Equatable {
            validation.expectedDNSError == nil &&
            (proxyClient != .manual || manualErrors.isEmpty) && validation.canaryHostError == nil &&
            validation.checkPageErrors.isEmpty && checkPages.count <= AppSettings.maxCheckPages &&
+           validation.egressHostErrors.isEmpty && customEgressHosts.count <= EgressIPTarget.maxCustom &&
            localError == nil && lightError == nil &&
            validation.siteCountError == nil && validation.siteErrors.isEmpty,
            let localInterval, let lightInterval {
@@ -317,7 +407,8 @@ public struct SettingsDraft: Sendable, Equatable {
                 manualProxy: manualProxy,
                 canaryHost: host,
                 checkPages: pages,
-                egressTargets: egressIncludesClaude ? [.claude, .cloudflare] : [.cloudflare],
+                egressTargets: EgressIPTarget.builtIns.filter { $0 == .cloudflare || enabledEgressBuiltIns.contains($0) }
+                    + customEgress,
                 notificationsEnabled: notificationsEnabled,
                 localCheckInterval: TimeInterval(localInterval),
                 lightProbeInterval: TimeInterval(lightInterval),

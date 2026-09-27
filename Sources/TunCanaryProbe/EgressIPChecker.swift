@@ -162,7 +162,7 @@ private final class EgressRequest: NSObject, URLSessionDataDelegate, @unchecked 
     }
 }
 
-/// 按需并发请求 Claude 与 Cloudflare 的 trace，由各目标回显本应用请求的出口 IP。
+/// 按需并发请求各目标（Cloudflare trace 或淘宝 IP 库），由目标回显本应用请求的出口 IP。
 public struct EgressIPChecker: EgressIPChecking, Sendable {
     public typealias ConfigurationFactory = @Sendable () -> URLSessionConfiguration
 
@@ -196,7 +196,8 @@ public struct EgressIPChecker: EgressIPChecking, Sendable {
             return EgressIPResult(target: target, checkedAt: checkedAt, ip: nil, ipVersion: nil,
                                   location: nil, failure: failure)
         case .body(let body):
-            switch Self.parse(body) {
+            let parsed = target.format == .taobaoIPInfo ? Self.parseTaobao(body) : Self.parse(body)
+            switch parsed {
             case .success(let ip, let version, let location):
                 return EgressIPResult(target: target, checkedAt: checkedAt, ip: ip, ipVersion: version,
                                       location: location, failure: nil)
@@ -235,6 +236,35 @@ public struct EgressIPChecker: EgressIPChecking, Sendable {
             }
         }
         guard let ip else { return .failure(.missingIP) }
+        return classify(ip, location: location)
+    }
+
+    /// 淘宝 IP 库：`{"code":0,"data":{"ip":…,"country_id":"CN","region":…,"city":…}}`。
+    /// 非 0 的 code（例如限流）判为接口拒绝；归属地取国家代码加省市，去掉控制字符并限长。
+    private static func parseTaobao(_ body: Data) -> ParsedTrace {
+        guard let object = try? JSONSerialization.jsonObject(with: body) as? [String: Any],
+              let code = object["code"] as? Int else { return .failure(.invalidResponse) }
+        guard code == 0 else { return .failure(.serviceRejected) }
+        guard let data = object["data"] as? [String: Any] else { return .failure(.invalidResponse) }
+        guard let ip = data["ip"] as? String, !ip.isEmpty else { return .failure(.missingIP) }
+        var parts: [String] = []
+        if let country = data["country_id"] as? String,
+           country.count == 2, country.utf8.allSatisfy({ (65...90).contains($0) }) {
+            parts.append(country)
+        }
+        let place = ["region", "city"].compactMap { key -> String? in
+            guard let value = data[key] as? String else { return nil }
+            let cleaned = String(value.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
+                .trimmingCharacters(in: .whitespaces)
+            return cleaned.isEmpty || cleaned == "XX" ? nil : String(cleaned.prefix(20))
+        }
+        var unique: [String] = []
+        for item in place where !unique.contains(item) { unique.append(item) }
+        if !unique.isEmpty { parts.append(unique.joined(separator: " ")) }
+        return classify(ip, location: parts.isEmpty ? nil : parts.joined(separator: " · "))
+    }
+
+    private static func classify(_ ip: String, location: String?) -> ParsedTrace {
         // inet_pton 接收 C 字符串；嵌入 NUL 会让后缀被忽略，必须先拒绝。
         guard !ip.utf8.contains(0) else { return .failure(.invalidIP) }
         var ipv4 = in_addr()

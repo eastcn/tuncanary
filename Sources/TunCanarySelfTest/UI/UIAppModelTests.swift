@@ -52,6 +52,7 @@ enum UIAppModelTests {
             TestCase("设置草稿：拒绝无效频率与站点") { t in await invalidFrequencyAndSites(t) },
             TestCase("L6：分组输入框逐字输入不被映射改写，保存时再映射") { t in await groupFieldTyping(t) },
             TestCase("保存设置：通过校验且有改动才保存") { t in await saveSettings(t) },
+            TestCase("设置分栏：打开时回到“站点”，错误按分栏标记并可跳转") { t in await settingsTabs(t) },
             TestCase("DNS 规则：采用当前值后草稿改为指定地址") { t in await adoptCurrentDNS(t) },
             TestCase("代理客户端：手动参数只在手动模式下校验") { t in await manualProxyDraft(t) },
             TestCase("常用站点模板：只列出未加入的，加入后可保存") { t in await siteTemplates(t) },
@@ -209,6 +210,39 @@ enum UIAppModelTests {
     }
 
     @MainActor
+    static func settingsTabs(_ t: TestContext) async {
+        let model = AppModel.preview(.allGreen)
+        model.settingsTab = .general
+        model.openSettings()
+        t.expectEqual(model.settingsTab, .sites, "打开设置时回到第一个分栏")
+        t.expectEqual(model.settingsValidation.tabsWithErrors, [])
+        t.expectNil(model.settingsValidation.firstTabWithErrors)
+
+        model.settingsTab = .general
+        model.showFirstSettingsError()
+        t.expectEqual(model.settingsTab, .general, "没有错误时不切换")
+
+        model.settingsDraft.lightProbeInterval = "4"
+        model.settingsDraft.canaryHost = "not a host"
+        t.expectEqual(model.settingsValidation.tabsWithErrors, [.proxyDNS, .general])
+        t.expectEqual(model.settingsValidation.firstTabWithErrors, .proxyDNS)
+        model.showFirstSettingsError()
+        t.expectEqual(model.settingsTab, .proxyDNS)
+
+        model.settingsDraft.intranetURL = "intranet.corp.example"
+        t.expectEqual(model.settingsValidation.tabsWithErrors, [.sites, .proxyDNS, .general])
+        model.showFirstSettingsError()
+        t.expectEqual(model.settingsTab, .sites)
+
+        model.settingsDraft.proxyClient = .manual
+        model.settingsDraft.manualDNSPort = "70000"
+        model.settingsDraft.canaryHost = PulseConstants.canaryHost
+        model.settingsDraft.intranetURL = ""
+        model.settingsDraft.lightProbeInterval = "120"
+        t.expectEqual(model.settingsValidation.tabsWithErrors, [.proxyDNS], "手动代理参数归入“代理与 DNS”")
+    }
+
+    @MainActor
     static func adoptCurrentDNS(_ t: TestContext) async {
         let model = AppModel.preview(.allGreen)
         model.settings = AppSettings()
@@ -238,10 +272,54 @@ enum UIAppModelTests {
         draft.egressIncludesClaude = true
         let settings = try? t.require(draft.validate().settings)
         t.expectEqual(settings?.checkPages, [CheckPage(name: "IP 检测", url: URL(string: "https://check.example.test/ip")!)])
-        t.expectEqual(settings?.egressTargets, [.claude, .cloudflare])
+        t.expectEqual(settings?.egressTargets, [.cloudflare, .claude])
         let roundTrip = SettingsDraft(settings: settings!)
         t.expectEqual(roundTrip.checkPages.map(\.url), ["https://check.example.test/ip"])
         t.expect(roundTrip.egressIncludesClaude)
+        t.expectEqual(roundTrip.customEgressHosts, [])
+
+        // 自定义出口域名：逐行报错，归入“站点”分栏，保存后往返。
+        draft.customEgressHosts = [SettingsDraft.EgressHostDraft(host: "not a host"),
+                                   SettingsDraft.EgressHostDraft(host: "https://Trace.Example.test/x"),
+                                   SettingsDraft.EgressHostDraft(host: "trace.example.test"),
+                                   SettingsDraft.EgressHostDraft(host: "claude.ai")]
+        let invalid = draft.validate()
+        t.expectEqual(invalid.egressHostErrors[0], "“not a host”不是有效的域名（例如 chatgpt.com）")
+        t.expectNil(invalid.egressHostErrors[1])
+        t.expectEqual(invalid.egressHostErrors[2], "“trace.example.test”已在出口检测目标中")
+        t.expectEqual(invalid.egressHostErrors[3], "“claude.ai”是内置目标，请打开上方的“Claude”")
+        t.expectEqual(invalid.tabsWithErrors, [.sites])
+        t.expect(!invalid.isValid)
+        draft.customEgressHosts.remove(at: 3)
+        draft.customEgressHosts.remove(at: 2)
+        draft.customEgressHosts.remove(at: 0)
+        let saved = try? t.require(draft.validate().settings)
+        let custom = EgressIPTarget.custom("trace.example.test")!
+        t.expectEqual(saved?.egressTargets, [.cloudflare, .claude, custom])
+        t.expectEqual(SettingsDraft(settings: saved!).customEgressHosts.map(\.host), ["trace.example.test"])
+
+        // 从输入框加入：规范化后加入，无效、重复和超额时不加。
+        var fromSaved = SettingsDraft(settings: saved!)
+        t.expectEqual(fromSaved.addEgressHost("not a host"), "“not a host”不是有效的域名（例如 chatgpt.com）")
+        t.expectEqual(fromSaved.addEgressHost("https://TRACE.example.test/"), "“trace.example.test”已在出口检测目标中")
+        t.expectEqual(fromSaved.addEgressHost("www.cloudflare.com"), "“www.cloudflare.com”是内置目标，始终检测")
+        t.expectEqual(fromSaved.addEgressHost("https://chatgpt.com/"), "“chatgpt.com”是内置目标，请打开上方的“ChatGPT”")
+
+        // 可选内置目标：开关往返，按固定顺序保存，Cloudflare 不可关闭。
+        var builtIns = SettingsDraft(settings: AppSettings())
+        t.expectEqual(builtIns.enabledEgressBuiltIns, [])
+        builtIns.setEgressBuiltIn(.taobao, enabled: true)
+        builtIns.setEgressBuiltIn(.chatgpt, enabled: true)
+        builtIns.setEgressBuiltIn(.cloudflare, enabled: false)
+        let withBuiltIns = try? t.require(builtIns.validate().settings)
+        t.expectEqual(withBuiltIns?.egressTargets, [.cloudflare, .chatgpt, .taobao])
+        t.expectEqual(SettingsDraft(settings: withBuiltIns!).enabledEgressBuiltIns, [.chatgpt, .taobao])
+        t.expectNil(fromSaved.addEgressHost(" https://Edge.Example.test/path "))
+        t.expectEqual(fromSaved.customEgressHosts.map(\.host), ["trace.example.test", "edge.example.test"])
+        for n in 1...3 { t.expectNil(fromSaved.addEgressHost("h\(n).example.test")) }
+        t.expectEqual(fromSaved.addEgressHost("h4.example.test"), SettingsValidationError.tooManyEgressTargets.message)
+        t.expectEqual(fromSaved.customEgressHosts.count, EgressIPTarget.maxCustom)
+        t.expect(fromSaved.validate().isValid)
     }
 
     @MainActor

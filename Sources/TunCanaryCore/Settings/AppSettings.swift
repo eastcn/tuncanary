@@ -139,7 +139,7 @@ public struct AppSettings: Sendable, Equatable, Codable {
     public var canaryHost: String
     /// 外部检测页，最多 3 个，默认不提供。
     public var checkPages: [CheckPage]
-    /// “检测出口”访问的目标，默认只有 Cloudflare。
+    /// “检测出口”访问的目标，默认只有 Cloudflare；可加入最多 `EgressIPTarget.maxCustom` 个自定义域名。
     public var egressTargets: [EgressIPTarget]
     /// 通知开关，默认开启。
     public var notificationsEnabled: Bool
@@ -222,10 +222,15 @@ public struct AppSettings: Sendable, Equatable, Codable {
         proxyDiagnosticsEnabled = try values.decodeIfPresent(Bool.self, forKey: .proxyDiagnosticsEnabled) ?? false
     }
 
-    /// 实际检测的出口目标：按固定顺序去重，为空时回落到默认值。
+    /// 实际检测的出口目标：内置项按固定顺序在前（没有时回落到默认值），
+    /// 自定义项按用户顺序在后，按域名去重，最多 `EgressIPTarget.maxCustom` 个。
+    /// 与内置项同域名的自定义项（例如 chatgpt.com）视为打开该内置项。
     public var effectiveEgressTargets: [EgressIPTarget] {
-        let chosen = EgressIPTarget.allCases.filter(egressTargets.contains)
-        return chosen.isEmpty ? Self.defaultEgressTargets : chosen
+        let normalized = egressTargets.map { $0.matchingBuiltIn ?? $0 }
+        let builtIns = EgressIPTarget.builtIns.filter(normalized.contains)
+        var seen = Set<String>()
+        let custom = normalized.filter { !$0.isBuiltIn && seen.insert($0.host).inserted }
+        return (builtIns.isEmpty ? Self.defaultEgressTargets : builtIns) + custom.prefix(EgressIPTarget.maxCustom)
     }
 
     /// 采集与判定使用的代理来源。
@@ -279,6 +284,7 @@ public enum SettingsValidationError: Error, Equatable, Sendable {
     case canaryHostInvalid(String)
     case tooManyCheckPages
     case checkPageInvalid(Int)
+    case tooManyEgressTargets
 
     public var message: String {
         switch self {
@@ -324,6 +330,8 @@ public enum SettingsValidationError: Error, Equatable, Sendable {
             return "检测页最多 \(AppSettings.maxCheckPages) 个"
         case .checkPageInvalid(let index):
             return "第 \(index + 1) 个检测页的名称须为 1–20 个字符，URL 须为含主机名的 http 或 https 地址，且不含账号或密码"
+        case .tooManyEgressTargets:
+            return "自定义出口检测域名最多 \(EgressIPTarget.maxCustom) 个"
         }
     }
 }
@@ -453,6 +461,9 @@ public enum SettingsValidator {
             errors.append(.canaryHostInvalid(settings.canaryHost))
         }
         errors += validateCheckPages(settings.checkPages)
+        if settings.egressTargets.filter({ $0.matchingBuiltIn == nil }).count > EgressIPTarget.maxCustom {
+            errors.append(.tooManyEgressTargets)
+        }
         errors += validateSites(settings.sites)
         return errors
     }

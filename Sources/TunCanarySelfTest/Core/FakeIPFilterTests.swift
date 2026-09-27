@@ -97,7 +97,7 @@ enum FakeIPFilterTests {
                 let page = CheckPage(name: "出口检测", url: URL(string: "https://check.example.test/")!)
                 t.expectEqual(AppSettings().checkPages, [])
                 t.expectEqual(AppSettings().effectiveEgressTargets, [.cloudflare])
-                t.expectEqual(AppSettings(egressTargets: [.cloudflare, .claude, .claude]).effectiveEgressTargets, [.claude, .cloudflare])
+                t.expectEqual(AppSettings(egressTargets: [.claude, .cloudflare, .claude]).effectiveEgressTargets, [.cloudflare, .claude])
                 t.expectEqual(AppSettings(egressTargets: []).effectiveEgressTargets, [.cloudflare])
                 let bad = CheckPage(name: "", url: URL(string: "ftp://x.test/")!)
                 t.expectEqual(SettingsValidator.validate(AppSettings(checkPages: [page, bad])), [.checkPageInvalid(1)])
@@ -110,9 +110,61 @@ enum FakeIPFilterTests {
                 let saved = AppSettings(checkPages: [page], egressTargets: [.claude, .cloudflare])
                 store.save(saved)
                 t.expectEqual(store.load().checkPages, [page])
-                t.expectEqual(store.load().egressTargets, [.claude, .cloudflare])
+                t.expectEqual(store.load().egressTargets, [.cloudflare, .claude])
                 defaults.set(["unknown"], forKey: SettingsStore.Key.egressTargets)
                 t.expectEqual(store.load().egressTargets, [.cloudflare])
+            },
+            TestCase("自定义出口目标：解析、顺序去重、上限与读写") { t in
+                let custom = try t.require(EgressIPTarget.custom("Trace.Example.test"))
+                t.expectEqual(custom.rawValue, "trace.example.test")
+                t.expectEqual(custom.host, "trace.example.test")
+                t.expectEqual(custom.url.absoluteString, "https://trace.example.test/cdn-cgi/trace")
+                t.expect(!custom.isBuiltIn)
+                t.expectEqual(EgressIPTarget.custom(" https://trace.example.test/some/path?q=1 "), custom, "网址只取主机名")
+                t.expectEqual(EgressIPTarget.custom("trace.example.test/path"), custom)
+                t.expectNil(EgressIPTarget.custom("https://user:pw@trace.example.test/"), "不接受含账号的网址")
+                t.expectNil(EgressIPTarget.custom("192.0.2.1"), "IP 字面量没有 trace")
+                t.expectNil(EgressIPTarget.custom("not a host"))
+                t.expectNil(EgressIPTarget.custom("cloudflare"), "不能与内置项的原始值冲突")
+                t.expectEqual(EgressIPTarget(rawValue: "claude"), .claude, "旧版保存的值仍可读取")
+                t.expectEqual(EgressIPTarget.claude.url.absoluteString, "https://claude.ai/cdn-cgi/trace")
+
+                let other = try t.require(EgressIPTarget.custom("edge.example.test"))
+                let sameAsBuiltIn = try t.require(EgressIPTarget.custom("claude.ai"))
+                let settings = AppSettings(egressTargets: [other, .cloudflare, custom, other, sameAsBuiltIn, .claude])
+                t.expectEqual(settings.effectiveEgressTargets, [.cloudflare, .claude, other, custom],
+                              "内置项在前，自定义项按用户顺序，按域名去重")
+                t.expectEqual(AppSettings(egressTargets: [custom]).effectiveEgressTargets, [.cloudflare, custom],
+                              "没有内置项时补上 Cloudflare")
+                let many = (1...7).compactMap { EgressIPTarget.custom("h\($0).example.test") }
+                t.expectEqual(AppSettings(egressTargets: many).effectiveEgressTargets.count, 1 + EgressIPTarget.maxCustom)
+                t.expectEqual(SettingsValidator.validate(AppSettings(egressTargets: many)), [.tooManyEgressTargets])
+
+                let suite = "np-test-egress-\(UUID().uuidString)"
+                let defaults = try t.require(UserDefaults(suiteName: suite))
+                defer { defaults.removePersistentDomain(forName: suite) }
+                let store = SettingsStore(defaults: defaults)
+                store.save(AppSettings(egressTargets: [.cloudflare, custom]))
+                t.expectEqual(defaults.stringArray(forKey: SettingsStore.Key.egressTargets),
+                              ["cloudflare", "trace.example.test"])
+                t.expectEqual(store.load().effectiveEgressTargets, [.cloudflare, custom])
+                defaults.set(["claude", "bad host", "trace.example.test"], forKey: SettingsStore.Key.egressTargets)
+                t.expectEqual(store.load().egressTargets, [.claude, custom], "跳过无效项")
+
+                // 内置 ChatGPT 与淘宝：固定地址；与内置项同域名的自定义项视为打开该内置项。
+                t.expectEqual(EgressIPTarget.chatgpt.url.absoluteString, "https://chatgpt.com/cdn-cgi/trace")
+                t.expectEqual(EgressIPTarget.taobao.format, .taobaoIPInfo)
+                t.expectEqual(EgressIPTarget.taobao.url.host, "ip.taobao.com")
+                t.expectEqual(EgressIPTarget(rawValue: "taobao"), .taobao)
+                let chatgptHost = try t.require(EgressIPTarget.custom("chatgpt.com"))
+                t.expectEqual(chatgptHost.matchingBuiltIn, .chatgpt)
+                t.expectEqual(AppSettings(egressTargets: [.cloudflare, chatgptHost, custom]).effectiveEgressTargets,
+                              [.cloudflare, .chatgpt, custom])
+                t.expectEqual(SettingsValidator.validate(AppSettings(egressTargets: [chatgptHost] + many.prefix(5))), [],
+                              "与内置项同域名的不计入自定义上限")
+
+                let json = try JSONEncoder().encode(AppSettings(egressTargets: [.cloudflare, custom]))
+                t.expectEqual(try JSONDecoder().decode(AppSettings.self, from: json).egressTargets, [.cloudflare, custom])
             },
         ])
     }

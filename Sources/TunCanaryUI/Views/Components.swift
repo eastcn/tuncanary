@@ -10,6 +10,23 @@ public enum PopoverMetrics {
     static let padding: CGFloat = 14
     /// 可滚动区域的默认最大高度；nil 表示不限（离屏渲染时展开全部内容）。
     public static let defaultMaxScrollHeight: CGFloat = 440
+    /// 分节之间的间距。
+    static let sectionSpacing: CGFloat = 14
+    /// 卡片内一行的水平、垂直内边距。
+    static let rowHorizontal: CGFloat = 10
+    static let rowVertical: CGFloat = 7
+}
+
+/// 弹窗字号：首页与设置页共用这四档。
+enum Typography {
+    /// 分节标题（卡片外、上方）。
+    static let sectionTitle = Font.system(size: 11, weight: .semibold)
+    /// 行标题、输入框、开关文字。
+    static let rowTitle = Font.system(size: 12.5)
+    /// 正文、结论。
+    static let body = Font.system(size: 12)
+    /// 说明、次要信息。
+    static let caption = Font.system(size: 11)
 }
 
 // MARK: - 状态徽标
@@ -81,13 +98,13 @@ struct SectionTitle: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
-                .font(.system(size: 11, weight: .semibold))
+                .font(Typography.sectionTitle)
                 .foregroundColor(.secondary)
                 .textCase(nil)
             Spacer(minLength: 8)
             if let trailing {
                 Text(trailing)
-                    .font(.system(size: 10.5))
+                    .font(Typography.caption)
                     .foregroundColor(.secondary.opacity(0.8))
             }
         }
@@ -113,6 +130,323 @@ struct CardBackground: ViewModifier {
 extension View {
     func cardBackground(_ tone: StatusTone = .neutral) -> some View {
         modifier(CardBackground(tone: tone))
+    }
+}
+
+/// 一张分组卡片：行与行之间用缩进的分隔线隔开。子视图用 `GroupRows` 逐行给出。
+struct GroupCard<Content: View>: View {
+    var tone: StatusTone = .neutral
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        _VariadicView.Tree(GroupRowsLayout()) {
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .cardBackground(tone)
+    }
+}
+
+/// `GroupCard` 的布局：在相邻子视图之间插入分隔线。
+private struct GroupRowsLayout: _VariadicView_UnaryViewRoot {
+    func body(children: _VariadicView.Children) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(children) { child in
+                if child.id != children.first?.id {
+                    Divider().padding(.leading, PopoverMetrics.rowHorizontal)
+                }
+                child
+            }
+        }
+    }
+}
+
+/// 分节：标题在上，分组卡片在下，卡片下方可附说明。
+struct FormSection<Content: View>: View {
+    let title: String
+    var trailing: String?
+    var footer: String?
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SectionTitle(title: title, trailing: trailing)
+                .padding(.horizontal, 2)
+            GroupCard(content: content)
+            if let footer {
+                Text(footer)
+                    .font(Typography.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 2)
+            }
+        }
+    }
+}
+
+/// 卡片内的一行：左标签、右控件；下方可附一行说明或错误。
+struct FormRow<Control: View>: View {
+    let label: String
+    var badge: String?
+    var caption: String?
+    var error: String?
+    @ViewBuilder var control: () -> Control
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+                HStack(spacing: 5) {
+                    Text(label)
+                        .font(Typography.rowTitle)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let badge { TagLabel(text: badge) }
+                }
+                .layoutPriority(1)
+                Spacer(minLength: 6)
+                control()
+            }
+            FieldNote(caption: caption, error: error)
+        }
+        .rowPadding()
+    }
+}
+
+/// 卡片内的一行：标签在上、输入框在下，用于 URL 等长值。
+struct FormFieldRow: View {
+    let label: String
+    let placeholder: String
+    @Binding var text: String
+    var caption: String?
+    var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(Typography.rowTitle)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+                .font(Typography.rowTitle)
+                .accessibilityLabel(Text(label))
+                .errorOutline(error != nil)
+            FieldNote(caption: caption, error: error)
+        }
+        .rowPadding()
+    }
+}
+
+/// 右侧窄输入框，可带单位（设置页的间隔、端口）。
+struct CompactField: View {
+    let label: String
+    let placeholder: String
+    @Binding var text: String
+    var unit: String?
+    var width: CGFloat = 90
+    var hasError = false
+
+    var body: some View {
+        HStack(spacing: 5) {
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+                .font(Typography.rowTitle)
+                .multilineTextAlignment(.trailing)
+                .frame(width: width)
+                .accessibilityLabel(Text(label))
+                .errorOutline(hasError)
+            if let unit {
+                Text(unit)
+                    .font(Typography.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+    }
+}
+
+/// 字段下方：有错误时显示错误，否则显示说明。
+struct FieldNote: View {
+    var caption: String?
+    var error: String?
+
+    var body: some View {
+        if let error {
+            ErrorText(text: error)
+        } else if let caption {
+            Text(caption)
+                .font(Typography.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
+
+/// 红色错误文字。
+struct ErrorText: View {
+    let text: String
+
+    var body: some View {
+        Label(text, systemImage: "exclamationmark.circle.fill")
+            .font(Typography.caption)
+            .foregroundColor(StatusTone.critical.textColor)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// 细边框小标签（“关键”“立即生效”）。
+struct TagLabel: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9, weight: .medium))
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 3.5)
+            .padding(.vertical, 0.5)
+            .overlay(
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .strokeBorder(Color.secondary.opacity(0.5), lineWidth: 0.6))
+            .fixedSize()
+    }
+}
+
+/// 可折叠的一行：箭头、标题、右侧摘要；展开后在下方显示内容。
+struct DisclosureRow<Content: View>: View {
+    let title: String
+    var trailing: String?
+    let isExpanded: Bool
+    let toggle: () -> Void
+    @ViewBuilder var content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: toggle) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.secondary)
+                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                        .frame(width: 10)
+                    Text(title)
+                        .font(Typography.rowTitle)
+                        .foregroundColor(.primary)
+                    Spacer(minLength: 6)
+                    if let trailing {
+                        Text(trailing)
+                            .font(Typography.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(isExpanded ? "已展开" : "已收起")
+            if isExpanded {
+                content()
+            }
+        }
+        .rowPadding()
+    }
+}
+
+/// 分节下方默认收起的“说明”：放较长的补充说明，不占版面。
+struct NotesDisclosure: View {
+    let notes: [String]
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                isExpanded.toggle()
+            } label: {
+                HStack(spacing: 3) {
+                    Image(systemName: "info.circle")
+                    Text(isExpanded ? "收起说明" : "说明")
+                }
+                .font(Typography.caption)
+                .foregroundColor(.secondary)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if isExpanded {
+                ForEach(Array(notes.enumerated()), id: \.offset) { _, note in
+                    Text(note)
+                        .font(Typography.caption)
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+            }
+        }
+        .padding(.horizontal, 2)
+    }
+}
+
+extension View {
+    /// 卡片内一行的标准内边距。
+    func rowPadding() -> some View {
+        padding(.horizontal, PopoverMetrics.rowHorizontal)
+            .padding(.vertical, PopoverMetrics.rowVertical)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 输入有误时的红色描边。
+    func errorOutline(_ show: Bool) -> some View {
+        overlay(
+            RoundedRectangle(cornerRadius: 5, style: .continuous)
+                .strokeBorder(StatusTone.critical.markColor, lineWidth: show ? 1.2 : 0)
+                .allowsHitTesting(false))
+    }
+}
+
+// MARK: - 分段控件
+
+/// 自绘分段控件（保证在弹窗与离屏渲染中外观一致）。`marked` 中的选项右上角显示红点。
+struct SegmentedTabs<Tab: Hashable & Identifiable>: View {
+    let tabs: [Tab]
+    @Binding var selection: Tab
+    let title: (Tab) -> String
+    var marked: Set<Tab> = []
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var selectedFill: Color {
+        colorScheme == .dark ? Color.white.opacity(0.16) : Color.white
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(tabs) { tab in
+                let selected = tab == selection
+                Button {
+                    selection = tab
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(title(tab))
+                        if marked.contains(tab) {
+                            Circle()
+                                .fill(StatusTone.critical.markColor)
+                                .frame(width: 6, height: 6)
+                                .accessibilityLabel(Text("有错误"))
+                        }
+                    }
+                    .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                    .foregroundColor(.primary.opacity(selected ? 1 : 0.75))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(selected ? selectedFill : Color.clear)
+                            .shadow(color: .black.opacity(selected ? 0.12 : 0), radius: 0.5, y: 0.5))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(Color.primary.opacity(0.07)))
     }
 }
 

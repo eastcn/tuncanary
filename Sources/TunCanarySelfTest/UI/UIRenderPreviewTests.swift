@@ -33,14 +33,25 @@ enum UIRenderPreviewTests {
                 for dark in [false, true] {
                     let png = await renderFull(dark: dark)
                     write(png, to: directory, name: "popover-googleWarning-full-\(suffix(dark)).png", t)
+                    let critical = await renderFull(.dnsCritical, dark: dark)
+                    write(critical, to: directory, name: "popover-dnsCritical-full-\(suffix(dark)).png", t)
+                    let sites = await renderSettingsFull(dark: dark)
+                    write(sites, to: directory, name: "settings-sites-full-\(suffix(dark)).png", t)
                 }
             },
             TestCase("设置与手动恢复步骤（浅色与深色）", timeout: 120) { t in
                 try prepare(directory)
                 for variant in SettingsVariant.allCases {
-                    for dark in [false, true] {
-                        let data = await render(model: { settingsModel(variant) }, dark: dark)
-                        writePopover(data, to: directory, name: "settings-\(variant.rawValue)-\(suffix(dark)).png", t)
+                    for tab in SettingsTab.allCases {
+                        for dark in [false, true] {
+                            let data = await render(model: {
+                                let model = settingsModel(variant)
+                                model.settingsTab = tab
+                                return model
+                            }, dark: dark)
+                            writePopover(data, to: directory,
+                                         name: "settings-\(variant.rawValue)-\(tab.rawValue)-\(suffix(dark)).png", t)
+                        }
                     }
                 }
                 for dark in [false, true] {
@@ -121,9 +132,19 @@ enum UIRenderPreviewTests {
 
     /// 不限高度的弹窗，用来查看滚动区域下方的内容。
     @MainActor
-    static func renderFull(dark: Bool) async -> Data? {
+    static func renderFull(_ scenario: PreviewScenario = .googleWarning, dark: Bool) async -> Data? {
         await PreviewSnapshotRenderer.pngData(
-            of: PopoverRootView(model: AppModel.preview(.googleWarning), maxScrollHeight: nil),
+            of: PopoverRootView(model: AppModel.preview(scenario), maxScrollHeight: nil),
+            width: PopoverMetrics.width, dark: dark)
+    }
+
+    /// 设置页“站点”栏全展开（含自定义出口目标）。
+    @MainActor
+    static func renderSettingsFull(dark: Bool) async -> Data? {
+        let model = AppModel.preview(.googleWarning)
+        model.openSettings()
+        return await PreviewSnapshotRenderer.pngData(
+            of: PopoverRootView(model: model, maxScrollHeight: nil),
             width: PopoverMetrics.width, dark: dark)
     }
 

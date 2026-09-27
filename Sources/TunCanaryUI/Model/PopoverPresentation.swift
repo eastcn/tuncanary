@@ -8,6 +8,23 @@ public enum PopoverRoute: String, Sendable, Equatable, CaseIterable {
     case recovery
 }
 
+/// 设置页的分栏。
+public enum SettingsTab: String, Sendable, Equatable, CaseIterable, Identifiable {
+    case sites
+    case proxyDNS
+    case general
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .sites: return "站点"
+        case .proxyDNS: return "代理与 DNS"
+        case .general: return "通用"
+        }
+    }
+}
+
 /// 检查进度。`nil`（见 `AppModel.checkProgress`）表示空闲。
 public struct CheckProgress: Sendable, Equatable {
     public enum Kind: String, Sendable, Equatable {

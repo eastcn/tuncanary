@@ -62,6 +62,8 @@ public final class AppModel: ObservableObject {
     @Published public var expandedCards: Set<StatusCardKind>
     /// “最近事件”区块是否展开。
     @Published public var showsRecentEvents = false
+    /// 设置页当前分栏。
+    @Published public var settingsTab: SettingsTab = .sites
     /// 设置页草稿。
     @Published public var settingsDraft: SettingsDraft
     /// 刚复制的内容（用于短暂显示“已复制”）：`diagnostics` 或 `command`。
@@ -240,6 +242,11 @@ public final class AppModel: ObservableObject {
         showsRecentEvents.toggle()
     }
 
+    /// 切到第一个有错误的设置分栏；没有错误时不动。
+    public func showFirstSettingsError() {
+        if let tab = settingsValidation.firstTabWithErrors { settingsTab = tab }
+    }
+
     public func openRecovery() {
         route = .recovery
     }
@@ -250,6 +257,7 @@ public final class AppModel: ObservableObject {
         settingsDraft = SettingsDraft(settings: settings)
         loginItemError = nil
         showsSavedFeedback = false
+        settingsTab = .sites
         route = .settings
         Task { await refreshSystemStatus() }
     }

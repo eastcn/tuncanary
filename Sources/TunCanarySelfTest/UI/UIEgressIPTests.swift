@@ -39,7 +39,7 @@ enum UIEgressIPTests {
         t.expect(model.egressResults.isEmpty, "重新检测不能保留旧IP冒充新结果")
         try await awaitStarted(checker, expected: 2)
         let secondTargets = await checker.requestedTargets
-        t.expectEqual(secondTargets.last, [.claude, .cloudflare], "按固定顺序检测")
+        t.expectEqual(secondTargets.last, [.cloudflare, .claude], "按固定顺序检测")
         model.cancelEgressIP()
         await checker.finish()
     }

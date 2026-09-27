@@ -1,11 +1,10 @@
 import SwiftUI
 import TunCanaryCore
 
-/// 可折叠的公开站点编辑器。所有操作只修改草稿，点击“保存”后才写入设置。
+/// 公开站点编辑器。所有操作只修改草稿，点击“保存”后才写入设置。
 struct PublicSitesSettingsSection: View {
     @ObservedObject var model: AppModel
     let validation: SettingsDraft.Validation
-    @State private var isExpanded = false
 
     private var enabledCount: Int { model.settingsDraft.sites.filter(\.isEnabled).count }
 
@@ -20,42 +19,17 @@ struct PublicSitesSettingsSection: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button {
-                isExpanded.toggle()
-            } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9.5, weight: .bold))
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                    Text("公开站点")
-                        .font(.system(size: 12.5, weight: .semibold))
-                    Text("已启用 \(enabledCount) / \(model.settingsDraft.sites.count)")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-                    if validation.siteCountError != nil || !validation.siteErrors.isEmpty {
-                        Image(systemName: "exclamationmark.circle.fill")
-                            .foregroundColor(StatusTone.critical.textColor)
-                    }
-                    Spacer()
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            if isExpanded {
-                Text("公开站点最多 20 个；未启用的站点保留在设置中，不参与检测。VPN 站点仍由上方 URL 和 VPN 状态单独控制。")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+        VStack(alignment: .leading, spacing: 6) {
+            FormSection(title: "公开站点",
+                        trailing: "已启用 \(enabledCount) / \(model.settingsDraft.sites.count)") {
                 if let error = validation.siteCountError {
-                    Label(error, systemImage: "exclamationmark.circle.fill")
-                        .font(.system(size: 11.5))
-                        .foregroundColor(StatusTone.critical.textColor)
+                    ErrorText(text: error).rowPadding()
                 }
                 if model.settingsDraft.sites.isEmpty {
                     Text("没有公开站点；可添加站点或还原默认站点。")
-                        .font(.system(size: 11.5))
+                        .font(Typography.caption)
                         .foregroundColor(.secondary)
+                        .rowPadding()
                 }
                 ForEach($model.settingsDraft.sites) { $site in
                     let editorID = site.editorID
@@ -79,12 +53,17 @@ struct PublicSitesSettingsSection: View {
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                     .disabled(model.settingsDraft.sites.count >= 20 || model.settingsDraft.availableTemplates.isEmpty)
-                    Button("还原默认站点") { model.settingsDraft.restoreDefaultSites() }
+                    Button("还原默认") { model.settingsDraft.restoreDefaultSites() }
+                        .help("还原默认站点")
                     Spacer()
                 }
                 .buttonStyle(PillButtonStyle(compact: true))
-                .padding(.top, 2)
+                .rowPadding()
             }
+            NotesDisclosure(notes: [
+                "公开站点最多 20 个；未启用的站点保留在设置中，不参与检测。VPN 站点在下方“VPN 与 Tailnet”中单独配置。",
+                "点站点名展开编辑名称、分组、URL，以及是否参与后台检测与故障告警。",
+            ])
         }
     }
 }
@@ -111,7 +90,7 @@ private struct PublicSiteEditorRow: View {
                         Image(systemName: "chevron.right")
                             .font(.system(size: 9, weight: .bold))
                             .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        Text(summary).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                        Text(summary).font(Typography.rowTitle).lineLimit(1)
                         if errors != nil {
                             Image(systemName: "exclamationmark.circle.fill")
                                 .foregroundColor(StatusTone.critical.textColor)
@@ -121,21 +100,18 @@ private struct PublicSiteEditorRow: View {
                 }
                 .buttonStyle(.plain)
                 Spacer(minLength: 2)
-                Toggle("启用", isOn: $site.isEnabled)
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .font(.system(size: 11))
+                SettingsSwitch(label: "启用\(summary)", isOn: $site.isEnabled)
             }
             if isExpanded {
                 SettingsTextField(title: "名称", placeholder: "站点名称", text: $site.name,
                                   caption: nil, error: errors?.name)
                 if errors?.id != nil {
                     Label("站点配置已损坏，请删除后重新添加", systemImage: "exclamationmark.circle.fill")
-                        .font(.system(size: 11.5))
+                        .font(Typography.caption)
                         .foregroundColor(StatusTone.critical.textColor)
                 }
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("分组").font(.system(size: 12.5, weight: .semibold))
+                    Text("分组").font(Typography.rowTitle)
                     Picker("分组", selection: $site.group) {
                         ForEach(availableGroups, id: \.self) { group in
                             Text(group.displayName).tag(group)
@@ -145,13 +121,13 @@ private struct PublicSiteEditorRow: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     TextField("选择已有分组，或输入新组名", text: SettingsDraft.SiteDraft.groupFieldBinding($site))
                         .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12.5))
+                        .font(Typography.rowTitle)
                         .accessibilityLabel(Text("分组名称"))
-                    Text("直接输入已有组名可归入该组；VPN 站点在上方单独配置。")
-                        .font(.system(size: 11))
+                    Text("直接输入已有组名可归入该组；VPN 站点在下方单独配置。")
+                        .font(Typography.caption)
                         .foregroundColor(.secondary)
                     if let error = errors?.group {
-                        Text(error).font(.system(size: 11.5)).foregroundColor(StatusTone.critical.textColor)
+                        Text(error).font(Typography.caption).foregroundColor(StatusTone.critical.textColor)
                     }
                 }
                 SettingsTextField(title: "URL", placeholder: "https://example.com/", text: $site.url,
@@ -159,9 +135,9 @@ private struct PublicSiteEditorRow: View {
                 Toggle("参与后台检测与故障告警", isOn: $site.inLightProbe)
                     .toggleStyle(.switch)
                     .controlSize(.small)
-                    .font(.system(size: 12))
+                    .font(Typography.body)
                 Text("连续三轮失败会提示需关注；同组全部后台站点失败会判定故障。")
-                    .font(.system(size: 11))
+                    .font(Typography.caption)
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
@@ -169,12 +145,11 @@ private struct PublicSiteEditorRow: View {
                     Button("删除站点", action: delete)
                         .foregroundColor(StatusTone.critical.textColor)
                         .buttonStyle(.plain)
-                        .font(.system(size: 11.5))
+                        .font(Typography.caption)
                 }
             }
         }
-        .padding(9)
-        .cardBackground(.neutral)
+        .rowPadding()
     }
 }
 

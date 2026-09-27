@@ -1,55 +1,28 @@
 import SwiftUI
 import TunCanaryCore
 
-/// 设置页：检测频率、公开站点、VPN 站点、Tailnet 子网、DNS 与系统选项。
+/// 设置页：顶部分栏切换“站点”“代理与 DNS”“通用”，底部统一保存。
 struct SettingsPanel: View {
     @ObservedObject var model: AppModel
     let maxScrollHeight: CGFloat?
 
     var body: some View {
         let validation = model.settingsValidation
+        let errorTabs = validation.tabsWithErrors
         VStack(spacing: 0) {
             PanelNavBar(title: "设置") { model.showMain() }
+            SegmentedTabs(tabs: SettingsTab.allCases, selection: $model.settingsTab,
+                          title: \.title, marked: errorTabs)
+                .padding(.horizontal, PopoverMetrics.padding)
+                .padding(.bottom, 10)
             Divider()
             BoundedScroll(maxHeight: maxScrollHeight) {
-                VStack(alignment: .leading, spacing: 18) {
-                    SettingsTextField(
-                        title: "VPN 站点 URL",
-                        placeholder: "https://intranet.example.com/",
-                        text: $model.settingsDraft.intranetURL,
-                        caption: "必须是 http 或 https，且含主机名。留空表示未配置，VPN 站点显示“未验证”。诊断摘要只显示“已配置”或“未配置”。",
-                        error: validation.intranetURLError)
-                    SettingsTextField(
-                        title: "Tailnet 子网目标",
-                        placeholder: "192.168.1.10:443",
-                        text: $model.settingsDraft.tailnetTarget,
-                        caption: "Tailnet 子网里一台常开设备的 IPv4 地址和 TCP 端口。经 Tailscale 子网路由访问时做连接探测，连续三轮失败判为故障；端口拒绝连接也算可达。当前网络与 Tailnet 子网网段相同时不探测。留空表示未配置。",
-                        error: validation.tailnetTargetError)
-                    ProxyClientSection(model: model, validation: validation)
-                    DNSRulesSection(model: model, error: validation.expectedDNSError)
-                    SettingsTextField(
-                        title: "探针域名",
-                        placeholder: PulseConstants.canaryHost,
-                        text: $model.settingsDraft.canaryHost,
-                        caption: "用系统解析器查询这个域名，判断 DNS 是否经过代理。须是会分配 fake-ip 的域名，不能在代理的 fake-ip 过滤名单中。",
-                        error: validation.canaryHostError)
-                    SettingsTextField(
-                        title: "本机检查间隔（秒）",
-                        placeholder: "20",
-                        text: $model.settingsDraft.localCheckInterval,
-                        caption: "默认 20 秒；可设置 5–3600 秒。",
-                        error: validation.localCheckIntervalError)
-                    SettingsTextField(
-                        title: "后台站点检测间隔（秒）",
-                        placeholder: "120",
-                        text: $model.settingsDraft.lightProbeInterval,
-                        caption: "默认 120 秒；可设置 15–86400 秒。检测未结束时会合并触发，避免重叠请求。",
-                        error: validation.lightProbeIntervalError)
-                    VPNAdaptersSection(model: model)
-                    PublicSitesSettingsSection(model: model, validation: validation)
-                    CheckPagesSection(model: model, validation: validation)
-                    NotificationSettingsSection(model: model)
-                    LoginItemSection(model: model)
+                VStack(alignment: .leading, spacing: PopoverMetrics.sectionSpacing) {
+                    switch model.settingsTab {
+                    case .sites: SettingsSitesTab(model: model, validation: validation)
+                    case .proxyDNS: SettingsProxyDNSTab(model: model, validation: validation)
+                    case .general: SettingsGeneralTab(model: model, validation: validation)
+                    }
                 }
                 .padding(PopoverMetrics.padding)
             }
@@ -59,10 +32,18 @@ struct SettingsPanel: View {
                     Label("已保存", systemImage: "checkmark.circle.fill")
                         .font(.system(size: 12))
                         .foregroundColor(StatusTone.ok.textColor)
-                } else if !validation.isValid {
-                    Text("请先修正标红的项")
-                        .font(.system(size: 11.5))
-                        .foregroundColor(StatusTone.critical.textColor)
+                } else if let first = validation.firstTabWithErrors {
+                    Button {
+                        model.showFirstSettingsError()
+                    } label: {
+                        Text("请先修正标红的项（\(SettingsTab.allCases.filter(errorTabs.contains).map(\.title).joined(separator: "、"))）")
+                            .font(Typography.caption)
+                            .foregroundColor(StatusTone.critical.textColor)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .buttonStyle(.plain)
+                    .help("转到“\(first.title)”")
                 }
                 Spacer(minLength: 4)
                 Button("取消") { model.showMain() }
@@ -78,18 +59,7 @@ struct SettingsPanel: View {
     }
 }
 
-/// 分节标题。
-private struct SettingsHeading: View {
-    let title: String
-
-    var body: some View {
-        Text(title)
-            .font(.system(size: 12.5, weight: .semibold))
-            .accessibilityAddTraits(.isHeader)
-    }
-}
-
-/// 文本输入 + 说明；有错误时在输入框下方显示错误（替代说明）。
+/// 文本输入 + 说明（标签在上）；有错误时在输入框下方显示错误（替代说明）。用于站点编辑器等卡片内的嵌套表单。
 struct SettingsTextField: View {
     let title: String
     let placeholder: String
@@ -99,320 +69,28 @@ struct SettingsTextField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            SettingsHeading(title: title)
+            Text(title)
+                .font(Typography.rowTitle)
+                .accessibilityAddTraits(.isHeader)
             TextField(placeholder, text: $text)
                 .textFieldStyle(.roundedBorder)
-                .font(.system(size: 12.5))
+                .font(Typography.rowTitle)
                 .accessibilityLabel(Text(title))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 5, style: .continuous)
-                        .strokeBorder(StatusTone.critical.markColor, lineWidth: error == nil ? 0 : 1.2)
-                        .allowsHitTesting(false))
-            if let error {
-                Label(error, systemImage: "exclamationmark.circle.fill")
-                    .font(.system(size: 11.5))
-                    .foregroundColor(StatusTone.critical.textColor)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else if let caption {
-                Text(caption)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+                .errorOutline(error != nil)
+            FieldNote(caption: caption, error: error)
         }
     }
 }
 
-/// 代理客户端：Clash Verge Rev 读取配置文件；其他客户端手动填写 fake-ip 网段等参数。
-struct ProxyClientSection: View {
-    @ObservedObject var model: AppModel
-    let validation: SettingsDraft.Validation
+/// 设置页里的开关（小号、右对齐）。
+struct SettingsSwitch: View {
+    let label: String
+    @Binding var isOn: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            SettingsHeading(title: "代理客户端")
-            Picker("客户端", selection: $model.settingsDraft.proxyClient) {
-                ForEach(ProxyClientKind.allCases, id: \.self) { Text($0.displayName).tag($0) }
-            }
-            .font(.system(size: 12.5))
-            if model.settingsDraft.proxyClient == .manual {
-                Group {
-                    SettingsTextField(
-                        title: "fake-ip 网段",
-                        placeholder: ManualProxyConfig.defaultFakeIPRange,
-                        text: $model.settingsDraft.manualFakeIPRange,
-                        caption: "与代理配置中的 fake-ip-range 一致。TUN 是否运行按此网段内的接口判断。",
-                        error: validation.manualFakeIPRangeError)
-                    SettingsTextField(
-                        title: "代理 DNS 端口",
-                        placeholder: "留空表示不检测",
-                        text: $model.settingsDraft.manualDNSPort,
-                        caption: "代理在本机监听的 DNS 端口，例如 1053。",
-                        error: validation.manualDNSPortError)
-                    SettingsTextField(
-                        title: "核心进程名",
-                        placeholder: "留空表示不检查进程",
-                        text: $model.settingsDraft.manualProcessName,
-                        caption: "可执行文件名，例如 mihomo。填写后，进程未运行时判为 TUN 未生效。",
-                        error: validation.manualProcessNameError)
-                }
-                .padding(.leading, 14)
-            } else {
-                Text("读取 Clash Verge Rev 的配置文件，只取 TUN 开关、DNS 端口、IPv6 开关和 fake-ip 网段，不读取 secret 和节点。")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Toggle(isOn: $model.settingsDraft.proxyDiagnosticsEnabled) {
-                    Text("站点失败时诊断代理")
-                        .font(.system(size: 12.5))
-                }
-                .toggleStyle(.switch)
-                Text("站点访问失败时复测一次，同时通过 Clash Verge Rev 的本机控制接口读取代理日志，查看这次访问命中的规则和节点，并对节点测一次延迟。只读，不修改代理配置，不需要 secret。首次失败和失败类型变化时自动诊断，站点行上也可以手动诊断。")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-    }
-}
-
-/// DNS 规则：VPN 断开、TUN 运行时和 VPN 连接时，主网络保存的 DNS 应满足的条件。
-struct DNSRulesSection: View {
-    @ObservedObject var model: AppModel
-    let error: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            SettingsHeading(title: "DNS 规则")
-            Text("TUN 以 fake-ip 模式运行时，系统解析返回真实地址即判为故障，不需要配置。以下规则检查主网络保存的 DNS。")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Picker("VPN 断开、TUN 运行时", selection: $model.settingsDraft.disconnectedDNSRule) {
-                ForEach(DisconnectedDNSRule.allCases, id: \.self) { Text($0.displayName).tag($0) }
-            }
-            .font(.system(size: 12.5))
-            if model.settingsDraft.disconnectedDNSRule == .equals || error != nil {
-                SettingsTextField(
-                    title: "预期 DNS",
-                    placeholder: "223.5.5.5",
-                    text: $model.settingsDraft.expectedDNS,
-                    caption: "一个或多个 IPv4 地址，用逗号分隔，比较时忽略顺序。",
-                    error: error)
-                    .padding(.leading, 14)
-            }
-            if let current = model.learnableExpectedDNS {
-                Button("用当前值作为预期（\(current.joined(separator: ", "))）") { model.adoptCurrentDNSAsExpected() }
-                    .buttonStyle(PillButtonStyle(compact: true))
-                    .help("当前系统解析经过代理，可以把此刻保存的 DNS 作为断开后的预期值。保存后生效。")
-            }
-            Picker("VPN 连接时", selection: $model.settingsDraft.connectedDNSRule) {
-                ForEach(ConnectedDNSRule.allCases, id: \.self) { Text($0.displayName).tag($0) }
-            }
-            .font(.system(size: 12.5))
-            if model.settingsDraft.connectedDNSRule == .proxyTakeover {
-                Text("VPN 连接、TUN 运行时，也按上面的规则检查保存的 DNS，并要求系统解析返回 fake-ip。VPN 域名须由代理解析，VPN 站点探测失败通常说明代理没能解析 VPN 域名。")
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.leading, 14)
-            }
-            Toggle(isOn: $model.settingsDraft.residualDNSWarning) {
-                Text("TUN 关闭时，提示仍残留的预期 DNS")
-                    .font(.system(size: 12.5))
-            }
+        Toggle(label, isOn: $isOn)
+            .labelsHidden()
             .toggleStyle(.switch)
             .controlSize(.small)
-            .disabled(model.settingsDraft.disconnectedDNSRule != .equals)
-        }
-    }
-}
-
-/// VPN 适配器：显示已加载的适配器和无效文件，可以立即重新读取目录（不随“保存”）。
-struct VPNAdaptersSection: View {
-    @ObservedObject var model: AppModel
-
-    private var loadedText: String {
-        let adapters = model.adapterSet.adapters
-        guard !adapters.isEmpty else { return "未加载适配器。" }
-        return "已加载 \(adapters.count) 个：\(adapters.map(\.name).joined(separator: "、"))。"
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            SettingsHeading(title: "VPN 适配器")
-            Text("\(loadedText)修改适配器目录中的文件后，约一个本机检查间隔内自动生效。")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            ForEach(Array(model.adapterSet.problems.enumerated()), id: \.offset) { _, problem in
-                Label(problem, systemImage: "exclamationmark.circle.fill")
-                    .font(.system(size: 11.5))
-                    .foregroundColor(StatusTone.warning.textColor)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Button("立即重新加载") { model.reloadAdapters() }
-                .buttonStyle(PillButtonStyle(compact: true))
-                .help("重新读取适配器目录，并立即做一次本机检查。")
-        }
-    }
-}
-
-/// 外部检测页与出口检测目标。
-struct CheckPagesSection: View {
-    @ObservedObject var model: AppModel
-    let validation: SettingsDraft.Validation
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            SettingsHeading(title: "检测页与出口")
-            Text("检测页在浏览器中打开，最多 \(AppSettings.maxCheckPages) 个，显示在弹窗底部。第三方检测页会看到你的出口 IP，请自行判断是否可信。")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            ForEach($model.settingsDraft.checkPages) { $page in
-                let pageID = page.id
-                let index = model.settingsDraft.checkPages.firstIndex { $0.id == pageID }
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        TextField("名称", text: $page.name)
-                            .frame(width: 90)
-                        TextField("https://…", text: $page.url)
-                        Button {
-                            model.settingsDraft.checkPages.removeAll { $0.id == pageID }
-                        } label: {
-                            Image(systemName: "minus.circle")
-                        }
-                        .buttonStyle(.plain)
-                        .help("删除此检测页")
-                    }
-                    .textFieldStyle(.roundedBorder)
-                    .font(.system(size: 12))
-                    if let error = index.flatMap({ validation.checkPageErrors[$0] }) {
-                        Label(error, systemImage: "exclamationmark.circle.fill")
-                            .font(.system(size: 11.5))
-                            .foregroundColor(StatusTone.critical.textColor)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-            }
-            Button("添加检测页") { model.settingsDraft.checkPages.append(SettingsDraft.CheckPageDraft()) }
-                .buttonStyle(PillButtonStyle(compact: true))
-                .disabled(model.settingsDraft.checkPages.count >= AppSettings.maxCheckPages)
-            Toggle(isOn: $model.settingsDraft.egressIncludesClaude) {
-                Text("“检测出口”同时访问 claude.ai")
-                    .font(.system(size: 12.5))
-            }
-            .toggleStyle(.switch)
-            .controlSize(.small)
-        }
-    }
-}
-
-/// 通知开关与系统授权状态。
-struct NotificationSettingsSection: View {
-    @ObservedObject var model: AppModel
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            SettingsHeading(title: "通知")
-            Toggle(isOn: $model.settingsDraft.notificationsEnabled) {
-                Text("出现需关注或故障时发送系统通知")
-                    .font(.system(size: 12.5))
-            }
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            status
-            Text("同一故障只通知一次，同一轮的多条通知合并为一条；恢复和“未确认”不通知。通知内容不包含 VPN 站点 URL。")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-    }
-
-    @ViewBuilder private var status: some View {
-        if !model.notificationsAvailable {
-            CalloutBox(tone: .neutral, icon: "bell.slash", title: "系统通知不可用",
-                       detail: "当前未在应用包内运行（例如 swift run），不会发送系统通知。")
-        } else {
-            switch model.notificationAuthorization {
-            case .denied:
-                CalloutBox(tone: .warning, icon: "bell.slash.fill", title: "系统通知已关闭",
-                           detail: "菜单栏和弹窗仍正常工作；需要通知时请在系统设置中允许 TunCanary。") {
-                    Button("打开系统设置") { model.openNotificationSettings() }
-                        .buttonStyle(PillButtonStyle(compact: true))
-                        .padding(.top, 2)
-                }
-            case .notDetermined:
-                CalloutBox(tone: .neutral, icon: "bell", title: "尚未授权系统通知") {
-                    Button("允许通知") { Task { await model.requestNotificationPermission() } }
-                        .buttonStyle(PillButtonStyle(compact: true))
-                        .padding(.top, 2)
-                }
-            case .authorized:
-                Label("系统通知已允许", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 11.5))
-                    .foregroundColor(StatusTone.ok.textColor)
-            }
-        }
-    }
-}
-
-/// 登录时启动：显示系统实际状态，操作立即生效（不随“保存”）。
-struct LoginItemSection: View {
-    @ObservedObject var model: AppModel
-
-    /// 系统状态 .unavailable 也可能出现在已安装应用中，此时仍可尝试重新注册。
-    private var isAppBundle: Bool { AppBundleEnvironment.current.isAppBundle }
-
-    private var isOn: Binding<Bool> {
-        Binding(
-            get: { model.loginItemStatus == .enabled || model.loginItemStatus == .requiresApproval },
-            set: { model.setLoginItemEnabled($0) })
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            SettingsHeading(title: "登录时启动")
-            Toggle(isOn: isOn) {
-                Text("登录时自动启动 TunCanary")
-                    .font(.system(size: 12.5))
-            }
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .disabled(!isAppBundle)
-            Text("系统状态：\(model.loginItemStatus.displayName)。此开关立即生效。")
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-            switch model.loginItemStatus {
-            case .requiresApproval:
-                CalloutBox(tone: .warning, icon: "exclamationmark.triangle.fill", title: "需要在系统设置中批准",
-                           detail: "请在“系统设置 → 通用 → 登录项”中允许 TunCanary，登录时启动才会生效。") {
-                    Button("打开登录项设置") { model.openLoginItemSettings() }
-                        .buttonStyle(PillButtonStyle(compact: true))
-                        .padding(.top, 2)
-                }
-            case .unavailable:
-                if isAppBundle {
-                    CalloutBox(tone: .warning, icon: "exclamationmark.triangle.fill", title: "登录项状态不可用",
-                               detail: "可尝试打开上方开关重新注册。若仍无法启用，请查看错误信息并检查系统设置中的登录项。") {
-                        Button("打开登录项设置") { model.openLoginItemSettings() }
-                            .buttonStyle(PillButtonStyle(compact: true))
-                            .padding(.top, 2)
-                    }
-                } else {
-                    CalloutBox(tone: .neutral, icon: "info.circle", title: "登录时启动不可用",
-                               detail: "仅在安装后的应用包中可用；当前运行环境不会调用系统登录项接口。")
-                }
-            case .enabled, .disabled:
-                EmptyView()
-            }
-            if let error = model.loginItemError {
-                Label(error, systemImage: "exclamationmark.circle.fill")
-                    .font(.system(size: 11.5))
-                    .foregroundColor(StatusTone.critical.textColor)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
     }
 }
