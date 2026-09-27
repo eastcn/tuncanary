@@ -13,7 +13,7 @@ for mode in light dark; do
     cp "$work/popover-allGreen-$mode.png" "$out/popover-ok-$mode.png"
     cp "$work/popover-dnsCritical-$mode.png" "$out/popover-dns-critical-$mode.png"
     # 站点区域中“海外”一组，含代理诊断结果。
-    sips -c 420 760 --cropOffset 890 0 "$work/popover-googleWarning-full-$mode.png" \
+    sips -c 436 760 --cropOffset 890 0 "$work/popover-googleWarning-full-$mode.png" \
         --out "$out/proxy-diagnosis-$mode.png" >/dev/null
 done
 ls -l "$out"
