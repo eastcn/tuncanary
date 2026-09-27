@@ -5,7 +5,7 @@ import TunCanaryCore
 public enum PreviewScenario: String, Sendable, CaseIterable {
     /// 全绿：VPN 断开、TUN 运行、DNS 符合预期、站点可达。
     case allGreen
-    /// 黄：Google 连续两轮失败。
+    /// 黄：Google 连续三轮失败。
     case googleWarning
     /// 红：VPN 断开后 DNS 未恢复。
     case dnsCritical
@@ -25,7 +25,7 @@ public enum PreviewScenario: String, Sendable, CaseIterable {
     public var title: String {
         switch self {
         case .allGreen: return "全绿"
-        case .googleWarning: return "黄（Google 两轮失败）"
+        case .googleWarning: return "黄（Google 三轮失败）"
         case .dnsCritical: return "红（DNS 未恢复）"
         case .firstLaunch: return "首次启动"
         case .checking: return "检查进行中"
@@ -113,7 +113,7 @@ enum PreviewData {
 
     /// 红色场景的最近事件：启动后 Google 短暂失败又消失，随后 DNS 未恢复。
     static func dnsCriticalEvents() -> [FaultEvent] {
-        let google = "Google 连续两轮访问失败"
+        let google = "Google 连续三轮访问失败"
         let dns = "主网络 DNS（Wi-Fi）：VPN 已断开、TUN 运行中，DNS 未恢复为 119.29.29.29"
         return [
             FaultEvent(date: now.addingTimeInterval(-7_200), kind: .started),

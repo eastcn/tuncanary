@@ -20,7 +20,7 @@ enum FaultEventTests {
             TestCase("记录器：出现、同键不重复、升级、消失") { t in
                 var recorder = FaultEventRecorder()
                 let dns = fault(.dnsNotRestored, .critical, "DNS 未恢复为 10.9.0.53")
-                let google = fault(.site("google"), .warning, "Google 连续两轮访问失败")
+                let google = fault(.site("google"), .warning, "Google 连续三轮访问失败")
                 let redactor = Redactor()
 
                 let first = recorder.update(with: [dns, google, fault(.tunInactive, .unknown, "灰色不记录")],
@@ -32,14 +32,14 @@ enum FaultEventTests {
 
                 t.expectEqual(recorder.update(with: [dns, google], at: start.addingTimeInterval(20), redactor: redactor), [])
 
-                let escalated = fault(.site("google"), .critical, "Google 连续两轮访问失败")
+                let escalated = fault(.site("google"), .critical, "Google 连续三轮访问失败")
                 let second = recorder.update(with: [escalated], at: start.addingTimeInterval(40), redactor: redactor)
                 t.expectEqual(second.map(\.kind), [.cleared, .changed])
                 t.expectEqual(second[0].key, .dnsNotRestored)
                 t.expectEqual(second[0].severity, .critical, "消失事件保留消失前的严重程度")
                 t.expectEqual(second[0].displaySeverity, .unknown)
                 t.expectEqual(second[0].text, "消失（已恢复或无法确认）：DNS 未恢复为 10.x.x.x")
-                t.expectEqual(second[1].text, "变为故障：Google 连续两轮访问失败")
+                t.expectEqual(second[1].text, "变为故障：Google 连续三轮访问失败")
 
                 let third = recorder.update(with: [], at: start.addingTimeInterval(60), redactor: redactor)
                 t.expectEqual(third.map(\.kind), [.cleared])

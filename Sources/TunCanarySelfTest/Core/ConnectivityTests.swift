@@ -136,15 +136,18 @@ enum ConnectivityTests {
                 t.expectEqual(tracker.failureCount(for: "claude"), 0)
                 t.expectEqual(tracker.faults, [])
             },
-            TestCase("两轮门槛：一轮失败不告警，两轮才告警") { t in
+            TestCase("三轮门槛：两轮失败不告警，三轮才告警") { t in
                 var tracker = ConnectivityTracker()
                 tracker.recordRound([ok(SiteCatalog.baidu), fail(SiteCatalog.google), ok(SiteCatalog.claude)], intranetEligible: false)
                 t.expectEqual(tracker.failureCount(for: "google"), 1)
                 t.expectEqual(tracker.faults, [])
                 tracker.recordRound([ok(SiteCatalog.baidu), fail(SiteCatalog.google, .dnsFailure), ok(SiteCatalog.claude)], intranetEligible: false)
+                t.expectEqual(tracker.failureCount(for: "google"), 2)
+                t.expectEqual(tracker.faults, [])
+                tracker.recordRound([ok(SiteCatalog.baidu), fail(SiteCatalog.google, .timeout), ok(SiteCatalog.claude)], intranetEligible: false)
                 t.expectEqual(tracker.faults.map(\.key), [.site("google")])
                 t.expectEqual(tracker.faults.first?.severity, .warning)
-                t.expectEqual(tracker.faults.first?.message, "Google 连续两轮访问失败")
+                t.expectEqual(tracker.faults.first?.message, "Google 连续三轮访问失败")
             },
             TestCase("中间成功一轮会清零") { t in
                 var tracker = ConnectivityTracker()
@@ -154,9 +157,9 @@ enum ConnectivityTests {
                 t.expectEqual(tracker.failureCount(for: "google"), 1)
                 t.expectEqual(tracker.faults, [])
             },
-            TestCase("大陆组：百度连续两轮失败为红") { t in
+            TestCase("大陆组：百度连续三轮失败为红") { t in
                 var tracker = ConnectivityTracker()
-                for _ in 0..<2 { tracker.recordRound([fail(SiteCatalog.baidu, .connectionFailure)], intranetEligible: false) }
+                for _ in 0..<3 { tracker.recordRound([fail(SiteCatalog.baidu, .connectionFailure)], intranetEligible: false) }
                 t.expectEqual(tracker.faults.map(\.key), [.group(.mainland)])
                 t.expectEqual(tracker.faults.first?.severity, .critical)
                 t.expectEqual(tracker.faults.first?.key.rawValue, "group.mainland")
@@ -178,12 +181,12 @@ enum ConnectivityTests {
             },
             TestCase("海外组：单站失败为黄，双站失败为红") { t in
                 var single = ConnectivityTracker()
-                for _ in 0..<2 { single.recordRound([fail(SiteCatalog.github, .tlsError), ok(SiteCatalog.google)], intranetEligible: false) }
+                for _ in 0..<3 { single.recordRound([fail(SiteCatalog.github, .tlsError), ok(SiteCatalog.google)], intranetEligible: false) }
                 t.expectEqual(single.faults.map(\.key), [.site("github")])
                 t.expectEqual(Severity.worst(single.faults.map(\.severity)), .warning)
 
                 var both = ConnectivityTracker()
-                for _ in 0..<2 { both.recordRound([fail(SiteCatalog.github), fail(SiteCatalog.google, .serverError)], intranetEligible: false) }
+                for _ in 0..<3 { both.recordRound([fail(SiteCatalog.github), fail(SiteCatalog.google, .serverError)], intranetEligible: false) }
                 t.expectEqual(both.faults.map(\.key), [.site("google"), .site("github"), .group(.overseas)])
                 t.expectEqual(both.faults.last?.severity, .critical)
                 t.expectEqual(FaultKey.group(.overseas).rawValue, "group.overseas")
@@ -201,9 +204,9 @@ enum ConnectivityTests {
                 let osaka = Site(id: "osaka", name: "大阪", group: SiteGroup(rawValue: "东亚"),
                                  url: URL(string: "https://osaka.example/")!, isKey: true, inLightProbe: true)
                 var tracker = ConnectivityTracker()
-                for _ in 0..<2 { tracker.recordRound([fail(tokyo), ok(osaka)], intranetEligible: false) }
+                for _ in 0..<3 { tracker.recordRound([fail(tokyo), ok(osaka)], intranetEligible: false) }
                 t.expectEqual(tracker.faults(sites: [tokyo, osaka]).map(\.key), [.site("tokyo")])
-                for _ in 0..<2 { tracker.recordRound([fail(tokyo), fail(osaka)], intranetEligible: false) }
+                for _ in 0..<3 { tracker.recordRound([fail(tokyo), fail(osaka)], intranetEligible: false) }
                 t.expectEqual(tracker.faults(sites: [tokyo, osaka]).map(\.key),
                               [.site("tokyo"), .site("osaka"), .group(SiteGroup(rawValue: "东亚"))])
                 t.expectEqual(tracker.faults(sites: [tokyo, osaka]).last?.severity, .critical)
@@ -215,7 +218,7 @@ enum ConnectivityTests {
             },
             TestCase("禁用内置关键站点的历史失败不产生故障") { t in
                 var tracker = ConnectivityTracker()
-                for _ in 0..<2 { tracker.recordRound([fail(SiteCatalog.google)], intranetEligible: false) }
+                for _ in 0..<3 { tracker.recordRound([fail(SiteCatalog.google)], intranetEligible: false) }
                 var disabled = SiteCatalog.google
                 disabled.isEnabled = false
                 t.expectEqual(tracker.faults(sites: [disabled, SiteCatalog.claude]), [])
@@ -230,12 +233,14 @@ enum ConnectivityTests {
                 tracker.recordRound(full, intranetEligible: false)
                 t.expectEqual(tracker.failureCount(for: "baidu"), 1)
                 tracker.recordRound([fail(SiteCatalog.baidu)], intranetEligible: false)
+                t.expectEqual(tracker.faults, [])
+                tracker.recordRound([fail(SiteCatalog.baidu)], intranetEligible: false)
                 t.expectEqual(tracker.faults.map(\.key), [.group(.mainland)])
             },
-            TestCase("内网站点：连接时连续两轮失败为黄，断开时不计") { t in
+            TestCase("内网站点：连接时连续三轮失败为黄，断开时不计") { t in
                 let intranet = SiteCatalog.intranet(url: intranetURL)
                 var tracker = ConnectivityTracker()
-                for _ in 0..<2 { tracker.recordRound([fail(intranet)], intranetEligible: true) }
+                for _ in 0..<3 { tracker.recordRound([fail(intranet)], intranetEligible: true) }
                 t.expectEqual(tracker.faults.map(\.key), [.site("intranet")])
                 t.expectEqual(tracker.faults.first?.severity, .warning)
                 t.expectNotContains(tracker.faults.first?.message ?? "", "corp.example")
@@ -247,13 +252,13 @@ enum ConnectivityTests {
             },
             TestCase("reset 清零全部计数") { t in
                 var tracker = ConnectivityTracker()
-                for _ in 0..<2 { tracker.recordRound([fail(SiteCatalog.baidu), fail(SiteCatalog.google)], intranetEligible: false) }
+                for _ in 0..<3 { tracker.recordRound([fail(SiteCatalog.baidu), fail(SiteCatalog.google)], intranetEligible: false) }
                 t.expect(!tracker.faults.isEmpty)
                 tracker.reset()
                 t.expectEqual(tracker.faults, [])
                 t.expectEqual(tracker.failureCount(for: "baidu"), 0)
                 tracker.recordRound([fail(SiteCatalog.baidu)], intranetEligible: false)
-                t.expectEqual(tracker.faults, [], "重置后需重新累计两轮")
+                t.expectEqual(tracker.faults, [], "重置后需重新累计三轮")
             },
 
             // MARK: 历史

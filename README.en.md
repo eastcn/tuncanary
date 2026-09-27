@@ -2,7 +2,13 @@
 
 [中文](README.md)
 
-TunCanary is a macOS menu bar app that checks whether system DNS queries bypass the TUN interface of a Clash-style proxy.
+TunCanary is a macOS menu bar app. When a proxy's TUN, a VPN and always-on tunnels such as Tailscale run side by side, it checks whether the local network has quietly gone wrong. The main check is whether system DNS queries bypass the TUN interface of a Clash-style proxy.
+
+## Who it is for
+
+TunCanary assumes you use a Clash-style proxy in TUN mode to manage the machine's network: the proxy, VPNs and tunnels such as Tailscale coexist, and TUN plus the proxy rules decide which path traffic takes. With a single proxy or a single VPN, the setup is simple and you probably do not need it.
+
+TUN being off is a normal state, not a failure. The Proxy TUN card then shows "disabled in config", and the other checks keep running; only checks that depend on fake-ip are skipped.
 
 ## The problem
 
@@ -21,7 +27,19 @@ TunCanary periodically resolves a canary domain with the system resolver. If it 
 | Primary DNS | Whether the canary resolves to a fake-ip address; optionally, whether the network service's saved DNS matches your rules. The canary's AAAA result is shown as evidence only and never raises an alert |
 | Proxy DNS | Whether the proxy's local DNS port answers |
 
-It also probes a list of sites in groups and alerts after two consecutive failed rounds.
+It also probes a list of sites in groups, by default every 2 minutes, and alerts after three consecutive failed rounds.
+
+## VPNs and always-on tunnels
+
+TunCanary treats two kinds of tunnel differently:
+
+| | VPN | Always-on tunnel (e.g. Tailscale) |
+| --- | --- | --- |
+| Usage | Connected and disconnected on demand; often rewrites the network service's DNS when it connects | Stays connected; only handles its own address range and domains |
+| Detection | Adapter configs you write, see [docs/ADAPTERS.md](docs/ADAPTERS.md) | Automatic: a utun with an address in `100.64.0.0/10` is treated as likely Tailscale |
+| Affects verdicts | Yes. Whether the VPN is connected decides which DNS rule applies to the primary service | No. It is only listed in the diagnostics |
+
+Do not write a VPN adapter for an always-on tunnel such as Tailscale. The adapter would make TunCanary think a VPN is always connected, and the DNS rule for the disconnected state would never apply. The DNS guard never modifies VPN-type network services such as Tailscale's.
 
 The user interface and most documentation are currently in Chinese.
 

@@ -160,7 +160,7 @@ private struct PublicSiteEditorRow: View {
                     .toggleStyle(.switch)
                     .controlSize(.small)
                     .font(.system(size: 12))
-                Text("连续两轮失败会提示需关注；同组全部后台站点失败会判定故障。")
+                Text("连续三轮失败会提示需关注；同组全部后台站点失败会判定故障。")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -22,7 +22,7 @@ public struct ConnectivityFault: Sendable, Hashable {
 
 /// 失败的计数语境，决定文案。
 public enum FailureContext: Sendable {
-    /// 应用内：连续两轮失败。
+    /// 应用内：连续三轮失败。
     case consecutiveRounds
     /// `--check` 单次运行：两次请求都失败。
     case singleCheck
@@ -31,7 +31,7 @@ public enum FailureContext: Sendable {
 
     var phrase: String {
         switch self {
-        case .consecutiveRounds: return "连续两轮访问失败"
+        case .consecutiveRounds: return "连续三轮访问失败"
         case .singleCheck: return "两次请求均失败"
         case .fullCheck: return "完整检测失败"
         }

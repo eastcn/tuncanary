@@ -57,7 +57,7 @@ enum UIPresentationTests {
                                                       isChecking: true, now: now, timeZone: shanghai)
                 t.expectEqual(warning.statusText, "需关注")
                 t.expectEqual(warning.tone, .warning)
-                t.expectEqual(warning.reason, "Google 连续两轮访问失败")
+                t.expectEqual(warning.reason, "Google 连续三轮访问失败")
             },
             TestCase("顶部：首次启动与首次检查中") { t in
                 let none = OverallAssessment(local: nil, connectivityFaults: [])
@@ -240,7 +240,7 @@ enum UIPresentationTests {
                 let checking = MenuBarIconState(overall: overall, isChecking: true)
                 t.expectEqual(checking.severity, .warning)
                 t.expect(checking.isChecking)
-                t.expectEqual(checking.tooltip, "TunCanary：需关注 — Google 连续两轮访问失败")
+                t.expectEqual(checking.tooltip, "TunCanary：需关注 — Google 连续三轮访问失败")
                 t.expectEqual(checking.accessibilityLabel, "TunCanary：需关注，检查进行中")
                 let first = MenuBarIconState(overall: OverallAssessment(local: nil, connectivityFaults: []), isChecking: false)
                 t.expectEqual(first.severity, .unknown)

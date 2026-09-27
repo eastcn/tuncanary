@@ -11,15 +11,17 @@ enum RuntimeReviewFixTests {
         try await RuntimeSuites.waitUntil(condition)
     }
 
-    /// 两轮后台轻测全部超时，进入告警后等待空闲。
-    private static func failTwoRounds(_ rig: Rig, perRound: Int = 3) async throws {
+    /// 后台轻测连续全部超时，达到告警门槛（三轮）后等待空闲。
+    private static func failUntilAlert(_ rig: Rig, perRound: Int = 3) async throws {
         await rig.start()
         try await waitUntil { await rig.prober.count == perRound }
         try await waitUntil { await rig.model.checkProgress == nil }
-        try await waitUntil { await rig.clock.hasSleeper(after: 120) }
-        await rig.clock.advance(120)
-        try await waitUntil { await rig.prober.count == perRound * 2 }
-        try await waitUntil { await rig.model.checkProgress == nil }
+        for round in 2...PulseConstants.consecutiveFailureThreshold {
+            try await waitUntil { await rig.clock.hasSleeper(after: 120) }
+            await rig.clock.advance(120)
+            try await waitUntil { await rig.prober.count == perRound * round }
+            try await waitUntil { await rig.model.checkProgress == nil }
+        }
     }
 
     private static func sites(_ edit: (inout [Site]) -> Void) -> [Site] {
@@ -36,7 +38,7 @@ enum RuntimeReviewFixTests {
         TestSuite("Runtime.ReviewFixes", [
             TestCase("H1：改名与改组保留告警计数、历史且不重复通知") { t in
                 let rig = try await Rig(category: .timeout)
-                try await failTwoRounds(rig)
+                try await failUntilAlert(rig)
                 let before = await rig.model.overall.faultKeys
                 t.expect(before.contains(.group(.mainland)) && before.contains(.group(.overseas)))
                 let notices = await rig.notifier.count
@@ -46,7 +48,7 @@ enum RuntimeReviewFixTests {
                     $0[index("bilibili")].group = SiteGroup(rawValue: "视频")
                 }
                 await rig.settingsDidChange(AppSettings(sites: renamed))
-                try await waitUntil { await rig.prober.count == 9 }
+                try await waitUntil { await rig.prober.count == 12 }
                 try await waitUntil { await rig.model.checkProgress == nil }
                 let after = await rig.model.overall.faultKeys
                 t.expect(after.contains(.group(.mainland)), "百度的连续失败计数不应被清零")
@@ -54,13 +56,13 @@ enum RuntimeReviewFixTests {
                 let noticesAfter = await rig.notifier.count
                 t.expectEqual(noticesAfter, notices, "故障未恢复，不应重复通知")
                 let history = await rig.model.siteHistory.recent(for: "google")
-                t.expectEqual(history.count, 3, "改名后历史应保留")
+                t.expectEqual(history.count, 4, "改名后历史应保留")
                 t.expect(history.allSatisfy { $0.site.name == "谷歌" }, "保留的历史应使用新名称")
 
                 // 预期 DNS 不影响站点可达性：本机转红，但站点计数不清零。
                 await rig.settingsDidChange(AppSettings(expectedDNS: ["119.29.29.29", "223.5.5.5"],
                                                         sites: renamed))
-                try await waitUntil { await rig.prober.count == 12 }
+                try await waitUntil { await rig.prober.count == 15 }
                 try await waitUntil { await rig.model.checkProgress == nil }
                 let afterDNS = await rig.model.overall.faultKeys
                 t.expect(afterDNS.contains(.group(.mainland)), "预期 DNS 变化不应清零站点计数")
@@ -69,12 +71,12 @@ enum RuntimeReviewFixTests {
             },
             TestCase("H1：URL、后台开关、启停改变或删除只清零对应站点") { t in
                 let rig = try await Rig(category: .timeout)
-                try await failTwoRounds(rig)
+                try await failUntilAlert(rig)
 
                 // Claude 改 URL：只清零 Claude；Google 保留计数，单站黄色。
                 var current = sites { $0[index("claude")].url = URL(string: "https://claude.ai/login")! }
                 await rig.settingsDidChange(AppSettings(sites: current))
-                try await waitUntil { await rig.prober.count == 9 }
+                try await waitUntil { await rig.prober.count == 12 }
                 try await waitUntil { await rig.model.checkProgress == nil }
                 var keys = await rig.model.overall.faultKeys
                 t.expect(keys.contains(.site("google")), "Google 的计数应保留")
@@ -88,23 +90,23 @@ enum RuntimeReviewFixTests {
                 current[index("google")].isKey = false
                 current[index("google")].inLightProbe = false
                 await rig.settingsDidChange(AppSettings(sites: current))
-                try await waitUntil { await rig.prober.count == 11 }
+                try await waitUntil { await rig.prober.count == 14 }
                 try await waitUntil { await rig.model.checkProgress == nil }
                 current[index("google")].isKey = true
                 current[index("google")].inLightProbe = true
                 // 同时删除百度：计数清零。
                 let baidu = current.remove(at: index("baidu"))
                 await rig.settingsDidChange(AppSettings(sites: current))
-                try await waitUntil { await rig.prober.count == 13 }
+                try await waitUntil { await rig.prober.count == 16 }
                 try await waitUntil { await rig.model.checkProgress == nil }
                 keys = await rig.model.overall.faultKeys
                 t.expect(!keys.contains(.site("google")), "后台开关改变后 Google 应从头计数")
-                t.expect(keys.contains(.site("claude")), "Claude 已连续失败两轮以上")
+                t.expect(keys.contains(.site("claude")), "Claude 已连续失败三轮以上")
 
                 // 重新加回百度：从头计数。
                 current.insert(baidu, at: 0)
                 await rig.settingsDidChange(AppSettings(sites: current))
-                try await waitUntil { await rig.prober.count == 16 }
+                try await waitUntil { await rig.prober.count == 19 }
                 try await waitUntil { await rig.model.checkProgress == nil }
                 keys = await rig.model.overall.faultKeys
                 t.expect(!keys.contains(.group(.mainland)), "删除后重新加入的百度应从头计数")
@@ -114,12 +116,12 @@ enum RuntimeReviewFixTests {
                 let intranet = URL(string: "https://intranet.corp.example/health")!
                 let rig = try await Rig(category: .timeout, settings: AppSettings(intranetURL: intranet),
                                         scenario: .b)
-                try await failTwoRounds(rig, perRound: 4)
+                try await failUntilAlert(rig, perRound: 4)
                 let before = await rig.model.overall.faultKeys
                 t.expect(before.contains(.site(SiteCatalog.intranetID)))
 
                 await rig.settingsDidChange(AppSettings(intranetURL: URL(string: "https://portal.corp.example/")!))
-                try await waitUntil { await rig.prober.count == 12 }
+                try await waitUntil { await rig.prober.count == 16 }
                 try await waitUntil { await rig.model.checkProgress == nil }
                 let after = await rig.model.overall.faultKeys
                 t.expect(!after.contains(.site(SiteCatalog.intranetID)), "内网目标改变，计数应清零")

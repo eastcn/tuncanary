@@ -8,7 +8,7 @@ public enum AppIdentity {
     /// 界面显示名称。
     public static let displayName = "TunCanary"
     /// 版本号。`scripts/build-app.sh` 从这里读取并写入 Info.plist，只在此处修改。
-    public static let version = "0.1.0"
+    public static let version = "0.2.0"
 }
 
 /// 已知路径。全部以 home 目录为参数计算，不写死用户名。
@@ -106,7 +106,7 @@ public enum PulseConstants {
     /// 收到睡眠事件后等待唤醒的兜底时长（秒，单调时钟）。真正睡眠时单调时钟不走，到点说明并未睡着。
     public static let sleepFallbackDelay: TimeInterval = 60
     /// 连续失败门槛（轮）。
-    public static let consecutiveFailureThreshold = 2
+    public static let consecutiveFailureThreshold = 3
     /// 每站保留的历史结果数。
     public static let siteHistoryLimit = 5
     /// 状态文件与网段都无法识别 VPN 隧道时，按路由数量回退识别所需的默认最少条数。

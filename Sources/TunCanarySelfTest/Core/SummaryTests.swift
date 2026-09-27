@@ -20,18 +20,18 @@ enum SummaryTests {
                               "TunCanary：故障 — 主网络 DNS（Wi-Fi）：VPN 已断开、TUN 运行中，DNS 未恢复为 119.29.29.29")
                 t.expectEqual(Set(overall.faultKeys), [.dnsNotRestored, .site("google")])
             },
-            TestCase("本机正常 + 百度两轮失败 → 红") { t in
+            TestCase("本机正常 + 百度三轮失败 → 红") { t in
                 let local = F.evaluate(try F.snapshot(.a))
                 let overall = OverallAssessment(local: local, connectivityFaults: connectivityFaults(["baidu"]))
                 t.expectEqual(overall.severity, .critical)
-                t.expectEqual(overall.primaryReason, "百度连续两轮访问失败，国内出口故障")
+                t.expectEqual(overall.primaryReason, "百度连续三轮访问失败，国内出口故障")
             },
             TestCase("黄 > 灰：本机未确认 + Google 失败 → 黄") { t in
                 let local = F.evaluate(F.addingProcess(try F.snapshot(.c), F.vpnProcess))
                 t.expectEqual(local.severity, .unknown)
                 let overall = OverallAssessment(local: local, connectivityFaults: connectivityFaults(["google"]))
                 t.expectEqual(overall.severity, .warning)
-                t.expectEqual(overall.primaryReason, "Google 连续两轮访问失败")
+                t.expectEqual(overall.primaryReason, "Google 连续三轮访问失败")
                 t.expectEqual(overall.reasons.last?.severity, .unknown)
             },
             TestCase("全部正常与尚无结果") { t in
@@ -65,10 +65,10 @@ enum NotificationTests {
         TestSuite("Core.NotificationDeduper", [
             TestCase("新进入黄或红时通知一次") { t in
                 var deduper = NotificationDeduper()
-                let first = deduper.update(with: [fault(.site("google"), .warning, "Google 连续两轮访问失败")])
+                let first = deduper.update(with: [fault(.site("google"), .warning, "Google 连续三轮访问失败")])
                 t.expectEqual(first.map(\.key), [.site("google")])
                 t.expectEqual(first.first?.title, "TunCanary：需关注")
-                t.expectEqual(first.first?.body, "Google 连续两轮访问失败")
+                t.expectEqual(first.first?.body, "Google 连续三轮访问失败")
                 t.expectEqual(deduper.update(with: [fault(.site("google"), .warning)]), [])
                 t.expectEqual(deduper.update(with: [fault(.site("google"), .warning)]), [])
             },

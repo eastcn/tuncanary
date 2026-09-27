@@ -100,10 +100,14 @@ enum RuntimeSuites {
                 t.expectEqual(probesAfterLight, 6)
                 await rig.stop()
             },
-            TestCase("连续两轮失败、4xx 不计失败、网络宽限重置计数") { t in
+            TestCase("连续三轮失败、4xx 不计失败、网络宽限重置计数") { t in
                 let rig = try await RuntimeRig(category: .timeout)
                 await rig.start()
                 try await waitUntil { await rig.prober.count == 3 }
+                await rig.clock.advance(120)
+                try await waitUntil { await rig.prober.count == 6 }
+                let failingAfterTwo = await rig.model.overall.faultKeys.contains(.group(.mainland))
+                t.expectEqual(failingAfterTwo, false)
                 await rig.clock.advance(120)
                 try await waitUntil { await rig.model.overall.faultKeys.contains(.group(.mainland)) }
                 let severity = await rig.model.overall.severity
@@ -123,7 +127,7 @@ enum RuntimeSuites {
                 try await waitUntil {
                     let ended = await rig.model.local?.isInGracePeriod == false
                     let probed = await rig.prober.count
-                    return ended && probed >= 9
+                    return ended && probed >= 12
                 }
                 let stillFailing = await rig.model.overall.faultKeys.contains(.group(.mainland))
                 let noticesAfterGrace = await rig.notifier.count
@@ -132,7 +136,7 @@ enum RuntimeSuites {
 
                 await rig.prober.setCategory(.restricted)
                 await rig.clock.advance(120)
-                try await waitUntil { await rig.prober.count >= 12 }
+                try await waitUntil { await rig.prober.count >= 15 }
                 let failingAfter403 = await rig.model.overall.faultKeys.contains(.group(.mainland))
                 t.expectEqual(failingAfter403, false)
                 await rig.stop()
@@ -254,6 +258,8 @@ enum RuntimeSuites {
                 t.expectEqual(initial, [.started, .started], "启动时载入已有事件，再记录本次启动")
 
                 try await waitUntil { await rig.prober.count == 3 }
+                await rig.clock.advance(120)
+                try await waitUntil { await rig.prober.count == 6 }
                 await rig.clock.advance(120)
                 try await waitUntil { await rig.model.overall.faultKeys.contains(.group(.mainland)) }
                 try await waitUntil { await rig.model.checkProgress == nil }

@@ -92,7 +92,7 @@ enum UIAppModelTests {
         }
 
         let google = AppModel.preview(.googleWarning)
-        t.expectEqual(google.overall.primaryReason, "Google 连续两轮访问失败")
+        t.expectEqual(google.overall.primaryReason, "Google 连续三轮访问失败")
         let googleRow = google.siteGroups[1].rows.first { $0.id == "google" }
         t.expectEqual(googleRow?.statusText, "超时")
         t.expectEqual(googleRow?.detailText, "连续 2 次失败")
@@ -513,7 +513,7 @@ enum UIAppModelTests {
                     connectivityFaults: ConnectivityTracker.faults(failingSiteIDs: ["baidu"], context: .consecutiveRounds),
                     checkedAt: checkedAt)
         t.expectEqual(model.overall.severity, .critical)
-        t.expectEqual(model.overall.primaryReason, "百度连续两轮访问失败，国内出口故障")
+        t.expectEqual(model.overall.primaryReason, "百度连续三轮访问失败，国内出口故障")
         t.expectEqual(model.lastCheckedAt, checkedAt)
         t.expectEqual(model.local, local)
     }
