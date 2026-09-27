@@ -68,6 +68,9 @@ public struct DNSGuardRunner: Sendable {
     /// 切换刚结束就能写入，不必等下一次定时运行。
     public static let transitionRetries = 3
     public static let transitionRetryInterval: TimeInterval = 5
+    /// 内网探针失败时重查的次数与间隔。VPN 刚连上的几秒里代理可能还查不到内网域名。
+    public static let probeRetries = 3
+    public static let probeRetryInterval: TimeInterval = 5
 
     public var config: DNSGuardConfig
     public var sampler: DNSGuardSampling
@@ -117,9 +120,14 @@ public struct DNSGuardRunner: Sendable {
 
         var decision = DNSGuardDecider.decide(first: first, second: second, config: config, state: state, now: now())
         if case .needsProbe(let host, let port) = decision {
-            let result = await prober.probe(host: host, port: port)
-            decision = DNSGuardDecider.decide(first: first, second: second, config: config, state: state,
-                                              probe: result, now: now())
+            for attempt in 0...Self.probeRetries {
+                if attempt > 0 { await sleep(Self.probeRetryInterval) }
+                let result = await prober.probe(host: host, port: port)
+                decision = DNSGuardDecider.decide(first: first, second: second, config: config, state: state,
+                                                  probe: result, now: now())
+                // 带着探针结果再判定，只会得到写入或探针失败。探针通过就不再重查。
+                guard case .skip = decision else { break }
+            }
         }
 
         var attempted = false

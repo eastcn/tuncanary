@@ -200,6 +200,8 @@ enum DNSGuardDaemonTests {
         /// 依次返回；用完后重复最后一个。第一个用于写入前复读。
         var readBacks: [DNSGuardReadBack] = []
         var probeResult: DNSGuardProbeResult = .answered([IPv4("10.20.0.8")!])
+        /// 先依次返回这里的结果，用完后返回 `probeResult`。
+        var probeSequence: [DNSGuardProbeResult] = []
         var state = DNSGuardState()
         var events: [DNSGuardEvent] = []
         var writes: [DNSGuardWritePlan] = []
@@ -231,7 +233,7 @@ enum DNSGuardDaemonTests {
         private func recordProbe() -> DNSGuardProbeResult {
             lock.lock(); defer { lock.unlock() }
             probes += 1
-            return probeResult
+            return probeSequence.isEmpty ? probeResult : probeSequence.removeFirst()
         }
 
         func loadState() -> DNSGuardState { lock.lock(); defer { lock.unlock() }; return state }
@@ -404,11 +406,26 @@ enum DNSGuardDaemonTests {
                 t.expect(!stubs.state.connectedTakeoverSuspended)
                 t.expectEqual(stubs.state.connectedWrites, [])
             },
+            TestCase("运行：VPN 刚连上时探针查不到，重查成功后写入") { t in
+                let stubs = Stubs()
+                stubs.samples = [sample(vpn: .connected, saved: ["10.9.0.53"])]
+                stubs.probeSequence = [.answered([]), .noResponse]
+                stubs.readBacks = [read(saved: ["10.9.0.53"], resolver: nil), read(saved: target, resolver: target)]
+                let sleeps = Sleeps()
+                let report = await runner(stubs, config: config(takeover: true), sleeps: sleeps).run()
+                t.expectEqual(stubs.probes, 3)
+                t.expectEqual(sleeps.values, [3, 5, 5])
+                t.expectEqual(report.event, DNSGuardEvent(date: now, phase: .connected, outcome: .written))
+                t.expectEqual(stubs.events.map(\.outcome), [.written], "中间的探针失败不记事件")
+            },
             TestCase("运行：内网探针失败时不写入") { t in
                 let stubs = Stubs()
                 stubs.samples = [sample(vpn: .connected, saved: ["10.9.0.53"])]
                 stubs.probeResult = .answered([IPv4("198.18.0.40")!])
-                let report = await runner(stubs, config: config(takeover: true)).run()
+                let sleeps = Sleeps()
+                let report = await runner(stubs, config: config(takeover: true), sleeps: sleeps).run()
+                t.expectEqual(stubs.probes, 4, "首次查询加 3 次重查")
+                t.expectEqual(sleeps.values, [3, 5, 5, 5])
                 t.expectEqual(report.event.reason, "代理无法解析内网探针（返回 fake-ip）")
                 t.expectEqual(stubs.writes, [])
                 t.expectNotContains(stubs.events.map(\.text).joined(), "probe.corp.example")
