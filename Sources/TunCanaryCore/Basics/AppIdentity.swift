@@ -15,11 +15,14 @@ public enum AppIdentity {
 public struct KnownPaths: Sendable, Equatable {
     /// 当前用户主目录，例如 `/Users/<name>`。
     public let homeDirectory: String
+    /// 代理配置目录；为 nil 时按主目录推算。DNS 守护进程以 root 身份运行，从自己的配置中取这个目录。
+    public let proxyConfigDirectory: String?
 
-    public init(homeDirectory: String) {
+    public init(homeDirectory: String, proxyConfigDirectory: String? = nil) {
         var home = homeDirectory
         while home.count > 1 && home.hasSuffix("/") { home.removeLast() }
         self.homeDirectory = home
+        self.proxyConfigDirectory = proxyConfigDirectory
     }
 
     /// 当前用户（读取进程环境，不访问文件）。
@@ -35,7 +38,7 @@ public struct KnownPaths: Sendable, Equatable {
 
     /// Clash Verge Rev 配置目录。
     public var clashVergeConfigDirectory: String {
-        underHome("Library/Application Support/io.github.clash-verge-rev.clash-verge-rev")
+        proxyConfigDirectory ?? underHome("Library/Application Support/io.github.clash-verge-rev.clash-verge-rev")
     }
 
     /// `verge.yaml`（读取 `enable_tun_mode`）。

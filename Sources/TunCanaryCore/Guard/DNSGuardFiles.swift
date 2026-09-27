@@ -122,18 +122,21 @@ public struct DNSGuardState: Sendable, Equatable, Codable {
     public var backoffUntil: Date?
     /// 连接期接管是否因写入过于频繁而停用。
     public var connectedTakeoverSuspended: Bool
+    /// 连接期最近的写入时间，用于 10 分钟内的次数上限。VPN 断开后清空。
+    public var connectedWrites: [Date]
 
     public init(lastRun: DNSGuardEvent? = nil, lastWrite: DNSGuardEvent? = nil, consecutiveFailures: Int = 0,
-                backoffUntil: Date? = nil, connectedTakeoverSuspended: Bool = false) {
+                backoffUntil: Date? = nil, connectedTakeoverSuspended: Bool = false, connectedWrites: [Date] = []) {
         self.lastRun = lastRun
         self.lastWrite = lastWrite
         self.consecutiveFailures = consecutiveFailures
         self.backoffUntil = backoffUntil
         self.connectedTakeoverSuspended = connectedTakeoverSuspended
+        self.connectedWrites = connectedWrites
     }
 
     private enum CodingKeys: String, CodingKey {
-        case lastRun, lastWrite, consecutiveFailures, backoffUntil, connectedTakeoverSuspended
+        case lastRun, lastWrite, consecutiveFailures, backoffUntil, connectedTakeoverSuspended, connectedWrites
     }
 
     /// 缺少的字段取默认值，便于以后追加字段。
@@ -144,6 +147,7 @@ public struct DNSGuardState: Sendable, Equatable, Codable {
         consecutiveFailures = try values.decodeIfPresent(Int.self, forKey: .consecutiveFailures) ?? 0
         backoffUntil = try values.decodeIfPresent(Date.self, forKey: .backoffUntil)
         connectedTakeoverSuspended = try values.decodeIfPresent(Bool.self, forKey: .connectedTakeoverSuspended) ?? false
+        connectedWrites = try values.decodeIfPresent([Date].self, forKey: .connectedWrites) ?? []
     }
 }
 

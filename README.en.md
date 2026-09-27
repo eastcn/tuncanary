@@ -55,9 +55,60 @@ tuncanary --version        # print the version
 
 Exit codes: `0` OK, `1` warning, `2` failure, `3` unconfirmed, `64` usage error. JSON keys and values will stay compatible across releases.
 
+## DNS guard (optional)
+
+The menu bar app only reports problems. The DNS guard is a separate, optional component that is not installed by default. It runs as root and, while the proxy's TUN is running, sets the primary network service's saved DNS to a target you choose, so queries go back through the proxy.
+
+It works in two phases:
+
+| Phase | Condition | Default |
+| --- | --- | --- |
+| Disconnected | TUN running, VPN disconnected, saved DNS is not the target | On |
+| Connected | TUN running, VPN connected, saved DNS is not the target, and the proxy resolves an intranet probe domain you choose | Off |
+
+Before turning on the connected phase, make sure the proxy sends intranet domains to the VPN's DNS. Otherwise intranet names stop resolving once the guard rewrites DNS.
+
+How it behaves:
+
+- A LaunchDaemon runs it when the system network configuration changes and every 30 seconds. Each run makes one decision and exits.
+- It samples twice, 3 seconds apart, and writes only if both samples agree. It never writes while the VPN is switching or its state is unconfirmed.
+- It relies on VPN adapters to tell the VPN state. With no adapters, or an invalid adapter file, it never writes.
+- It changes only the server list in the primary service's saved DNS and keeps the other DNS keys. It touches only allowed service types (Wi-Fi and Ethernet by default), never VPN services.
+- After writing, it reads back the saved value and the default resolver; only a match counts as success. After 3 consecutive failures it pauses for 10 minutes.
+- It never stops or restarts the proxy, and never changes proxy settings, VPN settings or routes.
+
+Build as a normal user, then install with administrator rights:
+
+```sh
+scripts/build-app.sh
+sudo scripts/install-dns-guard.sh
+```
+
+The install script copies the executable, its config and your VPN adapters to `/Library/Application Support/TunCanary/`, then loads `/Library/LaunchDaemons/io.github.eastcn.tuncanary.dns-guard.plist`. All of these are owned by root and read-only for other users.
+
+- The target DNS defaults to the expected DNS in settings, which requires the disconnected rule to be "指定地址" (specific address). Or pass `--target-dns 223.5.5.5`.
+- After changing adapters, run the install script again to copy them. It keeps the existing config and backs up old files first.
+- To change the config, edit `dns-guard.json` with `sudo`. Turn on connected takeover in `connectedTakeover` and set `intranetProbeHost`.
+
+To see what the guard would do without writing anything:
+
+```sh
+sudo "/Library/Application Support/TunCanary/bin/tuncanary-dns-guard" --dry-run
+```
+
+To uninstall:
+
+```sh
+sudo scripts/uninstall-dns-guard.sh
+```
+
+Uninstalling stops the guard and removes these files but does not revert DNS; check the saved DNS yourself afterwards.
+
+Once installed, the primary DNS card shows whether the guard is installed and the result of its latest run and write. If the guard's target DNS differs from the expected DNS in settings, the card says so.
+
 ## Privacy
 
-TunCanary only reads state. It never changes DNS, TUN, proxy or VPN settings. It collects and uploads nothing. Diagnostics, command-line output and notifications are redacted: private IP addresses keep only the first octet, and the intranet URL and home directory are removed. A redacted log of when faults appeared, changed and cleared (at most 200 entries) is kept locally in `~/Library/Application Support/TunCanary/events.jsonl`; `scripts/uninstall.sh --clear-settings` removes it.
+The menu bar app only reads state. It never changes DNS, TUN, proxy or VPN settings. Only the separately installed DNS guard changes the network service's saved DNS (see above). The app also reads the guard's config, state and events under `/Library/Application Support/TunCanary/` when they exist. It collects and uploads nothing. Diagnostics, command-line output and notifications are redacted: private IP addresses keep only the first octet, and the intranet URL and home directory are removed. A redacted log of when faults appeared, changed and cleared (at most 200 entries) is kept locally in `~/Library/Application Support/TunCanary/events.jsonl`; `scripts/uninstall.sh --clear-settings` removes it.
 
 ## License
 

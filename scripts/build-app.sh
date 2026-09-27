@@ -7,6 +7,7 @@ usage() {
 用法：scripts/build-app.sh [--help]
 
 执行 swift build -c release，生成 build/TunCanary.app 并校验 ad-hoc 签名。
+同时生成可选的 DNS 守护进程 build/tuncanary-dns-guard（安装见 scripts/install-dns-guard.sh）。
 EOF
 }
 
@@ -37,6 +38,9 @@ swift build -c release
 bin_dir="$(swift build -c release --show-bin-path)"
 binary="$bin_dir/TunCanary"
 [[ -x "$binary" ]] || { printf '未找到 release 可执行文件：%s\n' "$binary" >&2; exit 1; }
+guard_binary="$bin_dir/tuncanary-dns-guard"
+[[ -x "$guard_binary" ]] || { printf '未找到 release 可执行文件：%s\n' "$guard_binary" >&2; exit 1; }
+guard_path="$build_dir/tuncanary-dns-guard"
 
 mkdir -p "$build_dir"
 [[ ! -L "$app_path" ]] || { printf '产物路径是符号链接，拒绝覆盖：%s\n' "$app_path" >&2; exit 1; }
@@ -114,3 +118,13 @@ fi
 mv "$stage" "$app_path"
 published=1
 printf '已生成：%s\n' "$app_path"
+
+[[ ! -L "$guard_path" && ( ! -e "$guard_path" || -f "$guard_path" ) ]] || {
+    printf '产物路径已有其他内容，拒绝覆盖：%s\n' "$guard_path" >&2; exit 1;
+}
+cp "$guard_binary" "$work_dir/tuncanary-dns-guard"
+chmod 755 "$work_dir/tuncanary-dns-guard"
+codesign --force --sign - --identifier "$bundle_id.dns-guard" "$work_dir/tuncanary-dns-guard"
+codesign --verify --strict "$work_dir/tuncanary-dns-guard"
+mv -f "$work_dir/tuncanary-dns-guard" "$guard_path"
+printf '已生成：%s\n' "$guard_path"

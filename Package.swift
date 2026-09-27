@@ -7,6 +7,7 @@ let package = Package(
     products: [
         .executable(name: "TunCanary", targets: ["TunCanary"]),
         .executable(name: "TunCanarySelfTest", targets: ["TunCanarySelfTest"]),
+        .executable(name: "tuncanary-dns-guard", targets: ["TunCanaryDNSGuard"]),
         .library(name: "TunCanaryCore", targets: ["TunCanaryCore"]),
         .library(name: "TunCanarySystem", targets: ["TunCanarySystem"]),
         .library(name: "TunCanaryProbe", targets: ["TunCanaryProbe"]),
@@ -14,7 +15,8 @@ let package = Package(
         .library(name: "TunCanaryRuntime", targets: ["TunCanaryRuntime"]),
     ],
     targets: [
-        // 纯逻辑：模型、解析器、判定、汇总、设置、诊断。除设置、VPN 适配器与故障事件日志的读写外不做 I/O。
+        // 纯逻辑：模型、解析器、判定、汇总、设置、诊断。
+        // 除设置、VPN 适配器、故障事件日志和 DNS 守护进程状态文件的读写外不做 I/O。
         .target(name: "TunCanaryCore"),
 
         // 系统采集（getifaddrs、SCDynamicStore、proc_*、网络变化监听）。
@@ -60,6 +62,12 @@ let package = Package(
                 "TunCanaryUI",
                 "TunCanaryRuntime",
             ]
+        ),
+
+        // 可选的 DNS 守护进程：由 LaunchDaemon 以 root 身份运行，写入主网络服务保存的 DNS。
+        .executableTarget(
+            name: "TunCanaryDNSGuard",
+            dependencies: ["TunCanaryCore", "TunCanarySystem"]
         ),
 
         // 自带测试运行器（没有 XCTest / Testing）。

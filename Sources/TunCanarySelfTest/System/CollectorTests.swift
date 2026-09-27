@@ -145,6 +145,17 @@ enum CollectorTests {
 
     static var fileSuite: TestSuite {
         TestSuite("System.FileReaders", [
+            TestCase("DNS 守护进程写入：只替换 ServerAddresses，保留其他键") { t in
+                let current: [String: Any] = ["ServerAddresses": ["10.9.0.53"], "SearchDomains": ["example.test"],
+                                              "SupplementalMatchDomains": [""]]
+                let updated = DNSGuardPreferences.updatedConfiguration(current, target: ["192.0.2.53", "192.0.2.54"])
+                t.expectEqual(updated["ServerAddresses"] as? [String], ["192.0.2.53", "192.0.2.54"])
+                t.expectEqual(updated["SearchDomains"] as? [String], ["example.test"])
+                t.expectEqual(updated["SupplementalMatchDomains"] as? [String], [""])
+                t.expectEqual(updated.count, 3)
+                let fresh = DNSGuardPreferences.updatedConfiguration(nil, target: ["192.0.2.53"])
+                t.expectEqual(fresh.keys.sorted(), ["ServerAddresses"])
+            },
             TestCase("DNS 守护进程：未安装、已安装、文件缺失或损坏") { t in
                 let dir = try SystemTestKit.makeTemporaryDirectory()
                 defer { SystemTestKit.removeDirectory(dir) }
