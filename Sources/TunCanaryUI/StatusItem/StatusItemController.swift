@@ -12,6 +12,10 @@ import os
 ///   检查持续超过 `indicatorDelay` 才显示，显示后至少保留 `indicatorMinimumVisible`。
 /// - 悬停提示取 `OverallAssessment.tooltip`，辅助功能标签为 “TunCanary：<状态>”。
 /// - 点击切换 NSPopover（`.transient`），弹窗内容为 NSHostingController 承载的 `PopoverRootView`。
+/// - `.transient` 只在应用处于激活状态时可靠：应用失去激活后，点击其他应用不一定能收起弹窗。
+///   所以弹窗打开期间另外监听其他应用中的鼠标按下和应用失去激活，两者都收起弹窗。
+/// - 弹窗显示后关闭尺寸动画：检查结果更新时内容高度会变，带动画调整尺寸后光标区域可能没有刷新，
+///   指针会一直不可见，直到点击或移出弹窗。尺寸变化后也主动刷新一次光标区域。
 ///
 /// 创建即在菜单栏显示图标；只应在应用模式下创建（命令行与测试中不要创建）。
 @MainActor
@@ -33,6 +37,10 @@ public final class StatusItemController: NSObject, NSPopoverDelegate {
     private var indicatorVisible = false
     private var indicatorShownAt: Date?
     private var indicatorTask: Task<Void, Never>?
+    /// 弹窗打开期间：其他应用中的鼠标按下。
+    private var outsideClickMonitor: Any?
+    /// 弹窗打开期间：应用失去激活。
+    private var resignObserver: NSObjectProtocol?
 
     /// - Parameters:
     ///   - model: 界面的视图模型。
@@ -60,6 +68,7 @@ public final class StatusItemController: NSObject, NSPopoverDelegate {
     /// 从菜单栏移除图标（退出前可调用）。
     public func invalidate() {
         indicatorTask?.cancel()
+        stopDismissMonitors()
         cancellables.removeAll()
         popover.performClose(nil)
         statusItem.statusBar?.removeStatusItem(statusItem)
@@ -83,7 +92,9 @@ public final class StatusItemController: NSObject, NSPopoverDelegate {
         hostingController.rootView = PopoverRootView(
             model: model, maxScrollHeight: Self.maxScrollHeight(forVisibleHeight: visibleHeight))
         NSApp.activate(ignoringOtherApps: true)
+        popover.animates = true
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        startDismissMonitors()
         let window = popover.contentViewController?.view.window
         window?.makeKey()
         clearInitialFocus(in: window)
@@ -103,12 +114,51 @@ public final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     public func closePopover() {
+        guard popover.isShown else { return }
+        popover.animates = true
         popover.performClose(nil)
+    }
+
+    public func popoverDidShow(_ notification: Notification) {
+        // 打开动画结束后，内容尺寸变化直接生效，不再动画。
+        popover.animates = false
     }
 
     public func popoverDidClose(_ notification: Notification) {
         Logger(subsystem: AppIdentity.bundleID, category: "interface").debug("popover.close")
+        stopDismissMonitors()
         model.popoverDidClose()
+    }
+
+    private func startDismissMonitors() {
+        stopDismissMonitors()
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.closePopover() }
+        }
+        resignObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.closePopover() }
+        }
+    }
+
+    private func stopDismissMonitors() {
+        if let outsideClickMonitor { NSEvent.removeMonitor(outsideClickMonitor) }
+        outsideClickMonitor = nil
+        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
+        resignObserver = nil
+    }
+
+    /// 内容尺寸变化后刷新光标区域；指针在弹窗内时恢复为箭头，移动后由各控件重新设置。
+    private func refreshCursor() {
+        guard popover.isShown, let window = popover.contentViewController?.view.window,
+              let contentView = window.contentView else { return }
+        window.invalidateCursorRects(for: contentView)
+        if window.frame.contains(NSEvent.mouseLocation) {
+            NSCursor.arrow.set()
+        }
     }
 
     /// 可滚动区域的最大高度：给顶部、操作区、工具区和底栏留出约 320 pt。
@@ -141,6 +191,14 @@ public final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     private func bind() {
+        hostingController.publisher(for: \.preferredContentSize)
+            .removeDuplicates()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                // 等弹窗按新尺寸布局完再刷新。
+                DispatchQueue.main.async { self?.refreshCursor() }
+            }
+            .store(in: &cancellables)
         model.$overall
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.refresh() }

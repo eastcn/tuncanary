@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import TunCanaryCore
 import TunCanaryUI
@@ -48,6 +49,20 @@ enum UIPlatformTests {
 
     static var suite: TestSuite {
         TestSuite("UI.Platform", [
+            TestCase("主菜单含“编辑”菜单，⌘V 等快捷键发给第一响应者") { t in
+                let menu = EditMenu.makeMainMenu()
+                let edit = try t.require(menu.items.first { $0.title == "编辑" }?.submenu)
+                func item(_ key: String, _ modifiers: NSEvent.ModifierFlags) -> NSMenuItem? {
+                    edit.items.first { $0.keyEquivalent == key && $0.keyEquivalentModifierMask == modifiers }
+                }
+                t.expectEqual(item("v", [.command])?.action, #selector(NSText.paste(_:)))
+                t.expectEqual(item("c", [.command])?.action, #selector(NSText.copy(_:)))
+                t.expectEqual(item("x", [.command])?.action, #selector(NSText.cut(_:)))
+                t.expectEqual(item("a", [.command])?.action, #selector(NSText.selectAll(_:)))
+                t.expectEqual(item("z", [.command])?.action, Selector(("undo:")))
+                t.expectEqual(item("z", [.command, .shift])?.action, Selector(("redo:")))
+                t.expect(edit.items.allSatisfy { $0.target == nil }, "动作应发给第一响应者")
+            },
             TestCase("M5：单实例锁默认位于 Application Support/TunCanary") { t in
                 let expected = FileManager.default.homeDirectoryForCurrentUser
                     .appendingPathComponent("Library/Application Support/TunCanary/instance.lock")

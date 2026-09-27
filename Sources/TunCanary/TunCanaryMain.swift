@@ -92,6 +92,7 @@ private final class PulseAppDelegate: NSObject, NSApplicationDelegate {
     private let logger = Logger(subsystem: AppIdentity.bundleID, category: "lifecycle")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        EditMenu.install()
         let store = SettingsStore()
         let model = AppModel(settings: store.load(), egressChecker: EgressIPChecker())
         let notifier = UserNotificationCenterNotifier()
