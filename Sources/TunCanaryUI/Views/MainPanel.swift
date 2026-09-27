@@ -140,7 +140,6 @@ struct ActionBar: View {
     }
 }
 
-/// 手动恢复步骤与两个检测页入口。
 /// 最近事件：默认收起；展开后按时间倒序显示最多 10 条。
 struct RecentEventsSection: View {
     @ObservedObject var model: AppModel
@@ -212,6 +211,7 @@ struct RecentEventRow: View {
     }
 }
 
+/// 手动恢复步骤与两个检测页入口。
 struct ToolsSection: View {
     @ObservedObject var model: AppModel
 

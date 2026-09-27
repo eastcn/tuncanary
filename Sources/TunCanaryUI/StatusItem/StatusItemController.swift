@@ -84,8 +84,22 @@ public final class StatusItemController: NSObject, NSPopoverDelegate {
             model: model, maxScrollHeight: Self.maxScrollHeight(forVisibleHeight: visibleHeight))
         NSApp.activate(ignoringOtherApps: true)
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        popover.contentViewController?.view.window?.makeKey()
+        let window = popover.contentViewController?.view.window
+        window?.makeKey()
+        clearInitialFocus(in: window)
         Task { await model.refreshSystemStatus() }
+    }
+
+    /// 弹窗成为主窗口后，AppKit 会把焦点交给第一个可聚焦的控件（“立即复测”），
+    /// 按钮显示为选中，按空格或回车会误触发复测。这里清掉初始焦点；SwiftUI 在布局后可能再次分配，
+    /// 所以下一轮主循环再清一次。按 Tab 仍可用键盘在控件间移动。
+    private func clearInitialFocus(in window: NSWindow?) {
+        guard let window else { return }
+        window.makeFirstResponder(nil)
+        DispatchQueue.main.async { [weak window] in
+            guard let window, window.isKeyWindow else { return }
+            window.makeFirstResponder(nil)
+        }
     }
 
     public func closePopover() {
