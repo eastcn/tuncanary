@@ -87,7 +87,9 @@ enum UIAppModelTests {
             t.expectEqual(model.overall.severity, severity, scenario.rawValue)
             t.expectEqual(model.header.statusText, text, scenario.rawValue)
             t.expectEqual(model.menuBarIconState.severity, severity, scenario.rawValue)
-            t.expectEqual(model.cards.count, 4, scenario.rawValue)
+            // 前四张卡固定；有 Tailscale 隧道的场景多一张 Tailnet 卡。
+            t.expectEqual(Array(model.cards.map(\.kind).prefix(4)), [.proxyTun, .vpn, .primaryDNS, .proxyDNS], scenario.rawValue)
+            t.expect((4...5).contains(model.cards.count), scenario.rawValue)
             t.expectEqual(model.siteGroups.count, 3, scenario.rawValue)
         }
 

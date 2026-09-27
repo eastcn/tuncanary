@@ -4,6 +4,13 @@
 
 TunCanary is a macOS menu bar app. When a proxy's TUN, a VPN and always-on tunnels such as Tailscale run side by side, it checks whether the local network has quietly gone wrong. The main check is whether system DNS queries bypass the TUN interface of a Clash-style proxy.
 
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/popover-ok-dark.png"><img src="docs/images/popover-ok-light.png" width="330" alt="Popover: all checks pass"></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/popover-dns-critical-dark.png"><img src="docs/images/popover-dns-critical-light.png" width="330" alt="Popover: DNS not restored after the VPN disconnected"></picture>
+</p>
+
+<p align="center">Left: all checks pass. Right: DNS was not restored after the VPN disconnected, so queries bypass the proxy. The interface is in Chinese; the data is fictional.</p>
+
 ## Who it is for
 
 TunCanary assumes you use a Clash-style proxy in TUN mode to manage the machine's network: the proxy, VPNs and tunnels such as Tailscale coexist, and TUN plus the proxy rules decide which path traffic takes. With a single proxy or a single VPN, the setup is simple and you probably do not need it.
@@ -28,7 +35,9 @@ TunCanary periodically resolves a canary domain with the system resolver. If it 
 | Proxy DNS | Whether the proxy's local DNS port answers |
 | Tailnet | Shown only when a Tailscale tunnel exists or a tailnet subnet target is set. Whether tailnet routes go through the Tailscale tunnel, whether MagicDNS resolves this Mac's name back to its own address, and which route the tailnet subnet target takes |
 
-It also probes a list of sites in groups, by default every 2 minutes, and alerts after three consecutive failed rounds.
+It also probes a list of sites in groups, by default every 2 minutes, and alerts after three consecutive failed rounds. With proxy diagnosis on, the result appears under the site row: the rule and node this request hit.
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/proxy-diagnosis-dark.png"><img src="docs/images/proxy-diagnosis-light.png" width="380" alt="Proxy diagnosis under a site row"></picture></p>
 
 The Tailnet card turns red when the MagicDNS address or `100.64.0.0/10` is not routed through the Tailscale tunnel, when the tailnet subnet target leaves through the default route, the proxy's TUN or another tunnel (the subnet route is not in effect), or when a TCP connection to the target fails three rounds in a row. It turns yellow when MagicDNS does not answer, or when the system resolves this Mac's MagicDNS name to a fake-ip, another address, or not at all. It is grey, and the target is not probed, when the target lies in the current network's subnet (for example at the site itself, or on another network that happens to use the same range) or when Tailscale is not connected. A grey Tailnet card does not affect the overall status or the exit code. The TCP probe only opens a connection; a refused connection still proves the path works.
 

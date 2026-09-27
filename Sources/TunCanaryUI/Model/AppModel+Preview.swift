@@ -160,6 +160,14 @@ enum PreviewData {
         kind: .proxyDNS, title: "Mihomo DNS", severity: .ok, conclusion: "7874 端口响应 8 ms",
         evidence: ["应答 198.18.0.26（fake-ip，属正常）"])
 
+    static let tailnetCard = StatusCard(
+        kind: .tailnet, title: "Tailnet", severity: .ok, conclusion: "已连接（utun4），MagicDNS 正常",
+        evidence: [
+            "Tailscale 隧道 utun4（100.101.102.103）",
+            "tailnet 路由经 utun4",
+            "系统解析本机 MagicDNS 名称，返回本机 Tailscale 地址",
+        ])
+
     static func dnsCard(_ severity: Severity, _ conclusion: String, hint: String? = nil,
                         evidence: [String], key: FaultKey? = nil) -> StatusCard {
         StatusCard(kind: .primaryDNS, title: "Wi-Fi DNS", label: "主网络 DNS（Wi-Fi）", severity: severity,
@@ -182,7 +190,7 @@ enum PreviewData {
             intranetProbeEnabled: vpn == .connected,
             primaryServiceName: "Wi-Fi",
             mihomoDNSPort: 7874,
-            diagnosticNotes: ["其他隧道 utun4（100.101.102.103，疑似 Tailscale），不参与判定"],
+            diagnosticNotes: ["Tailscale 隧道 utun4（100.101.102.103），由 Tailnet 卡检查，不参与 VPN 判定"],
             evaluatedAt: now)
         local.primaryReason = grace ? "网络切换中" : (local.reasons.first?.text ?? "各项检查正常")
         return local
@@ -195,6 +203,7 @@ enum PreviewData {
             dnsCard(.ok, "DNS 为 119.29.29.29，符合预期",
                     evidence: ["保存值：119.29.29.29", "系统解析 www.google.com 返回 fake-ip 198.18.0.26"]),
             mihomoCard,
+            tailnetCard,
         ], vpn: .disconnected)
     }
 
@@ -211,6 +220,7 @@ enum PreviewData {
                     ],
                     key: .dnsNotRestored),
             mihomoCard,
+            tailnetCard,
         ], vpn: .disconnected)
     }
 

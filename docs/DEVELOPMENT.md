@@ -34,6 +34,8 @@ TUNCANARY_LIVE=1 scripts/test.sh System.Live Probe.Live       # 读取本机真�
 TUNCANARY_RENDER_DIR=/tmp/tuncanary-ui scripts/test.sh UI.RenderPreview   # 离屏渲染界面预览 PNG
 ```
 
+README 中的截图由 `scripts/render-readme-images.sh` 生成，写入 `docs/images/`。它们来自离屏渲染的预览状态，全部是虚构数据；界面改动后重新运行一次即可。请不要用实机截图替换。
+
 实机采集时设置 `TUNCANARY_LIVE_TAILNET_TARGET=地址:端口`，会按这个 Tailnet 子网目标评估 Tailnet 卡；目标经 Tailscale 路由时再做一次 TCP 探测。它不读取、也不修改应用设置。`System.Live` 还会在找到 Clash Verge Rev 控制接口时，对 GitHub 和一个必然失败的地址各做一次代理诊断并打印结果。
 
 DNS 守护进程的安装脚本可以装到临时根目录，不需要 root，也不调用 `launchctl`：

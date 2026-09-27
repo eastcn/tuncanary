@@ -4,6 +4,13 @@
 
 TunCanary 是一个 macOS 菜单栏应用。代理的 TUN、VPN 和 Tailscale 等隧道同时存在时，它检查本机网络有没有悄悄出错。最主要的一项检查是系统 DNS 有没有绕过 Clash 类代理的 TUN。
 
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/popover-ok-dark.png"><img src="docs/images/popover-ok-light.png" width="330" alt="弹窗：各项检查正常"></picture>
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/popover-dns-critical-dark.png"><img src="docs/images/popover-dns-critical-light.png" width="330" alt="弹窗：VPN 断开后 DNS 未恢复"></picture>
+</p>
+
+<p align="center">左：各项正常；右：VPN 断开后 DNS 没有恢复，DNS 查询绕过了代理。截图使用虚构数据。</p>
+
 ## 适用场景
 
 TunCanary 假定你用 Clash 类代理的 TUN 模式统一管理本机网络：代理、VPN 和 Tailscale 等多条路径同时存在，由 TUN 和代理规则决定流量走哪条。只用一路代理或者只用一个 VPN 时，环境简单，一般不需要它。
@@ -28,7 +35,9 @@ TunCanary 每隔一段时间用系统解析器查询一个“探针”域名，�
 | 代理 DNS | 代理在本机监听的 DNS 端口是否响应 |
 | Tailnet | 只在有 Tailscale 隧道或配置了 Tailnet 子网目标时出现。检查 tailnet 路由是否经过 Tailscale 隧道、MagicDNS 能否把本机名称解析回本机地址，以及 Tailnet 子网目标走哪条路由 |
 
-此外还会分组检测一组站点的可达性（默认是百度、哔哩哔哩、Google、GitHub 和 Cloudflare）。后台默认每 2 分钟检测一轮，连续三轮失败时告警。
+此外还会分组检测一组站点的可达性（默认是百度、哔哩哔哩、Google、GitHub 和 Cloudflare）。后台默认每 2 分钟检测一轮，连续三轮失败时告警。开启“站点失败时诊断代理”后，诊断结果显示在站点行下方，说明这次访问命中了哪条规则、经过哪个节点：
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/proxy-diagnosis-dark.png"><img src="docs/images/proxy-diagnosis-light.png" width="380" alt="站点行下方的代理诊断结果"></picture></p>
 
 颜色含义：绿色正常，黄色需关注，红色故障，灰色表示证据不足或未确认。状态未确认时不给修复建议，也不发通知。Tailnet 卡的灰色（例如人就在子网所在的局域网里，网段相同）只表示这个场景无法判断，不影响整体结论和命令行退出码。
 
