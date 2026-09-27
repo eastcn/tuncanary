@@ -368,6 +368,7 @@ public struct CLIVerdict: Sendable, Equatable {
             var group: String
         }
 
+        var appVersion: String
         var status: String
         var statusText: String
         var exitCode: Int32
@@ -397,6 +398,7 @@ public struct CLIVerdict: Sendable, Equatable {
         case .vpnUnconfirmed: intranetStatus = "vpnUnconfirmed"
         }
         let payload = JSONPayload(
+            appVersion: AppIdentity.version,
             status: severity.rawValue,
             statusText: severity.displayName,
             exitCode: exitCode.rawValue,

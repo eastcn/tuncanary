@@ -21,7 +21,11 @@ repo_dir="$(cd "$(dirname "$0")/.." && pwd -P)"
 build_dir="$repo_dir/build"
 app_path="$build_dir/TunCanary.app"
 bundle_id="io.github.eastcn.tuncanary"
-version="0.1.0"
+identity_source="$repo_dir/Sources/TunCanaryCore/Basics/AppIdentity.swift"
+version="$(sed -n 's/^[[:space:]]*public static let version = "\([0-9A-Za-z.-]*\)"$/\1/p' "$identity_source")"
+[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || {
+    printf '无法从 %s 读取版本号\n' "$identity_source" >&2; exit 1;
+}
 
 for tool in swift iconutil codesign plutil; do
     command -v "$tool" >/dev/null || { printf '缺少构建工具：%s\n' "$tool" >&2; exit 1; }

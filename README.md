@@ -73,6 +73,7 @@ scripts/uninstall.sh --clear-settings # 一并删除设置
 tuncanary --check          # 一次本机检查和一轮轻测
 tuncanary --check --full   # 完整检测全部站点
 tuncanary --check --json   # 输出 JSON
+tuncanary --version        # 打印版本号
 ```
 
 退出码：`0` 正常，`1` 需关注，`2` 故障，`3` 未确认，`64` 参数错误。黄色或红色的本机结论会在 10 秒后复查一次，两次一致才报告。整体超时 30 秒。

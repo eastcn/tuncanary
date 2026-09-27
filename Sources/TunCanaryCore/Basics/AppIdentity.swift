@@ -7,6 +7,8 @@ public enum AppIdentity {
     public static let name = "TunCanary"
     /// 界面显示名称。
     public static let displayName = "TunCanary"
+    /// 版本号。`scripts/build-app.sh` 从这里读取并写入 Info.plist，只在此处修改。
+    public static let version = "0.1.0"
 }
 
 /// 已知路径。全部以 home 目录为参数计算，不写死用户名。

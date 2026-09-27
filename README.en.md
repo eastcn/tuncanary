@@ -50,6 +50,7 @@ To uninstall, run `scripts/uninstall.sh`. Add `--clear-settings` to remove setti
 tuncanary --check          # one local check and a light site probe
 tuncanary --check --full   # probe every enabled site three times
 tuncanary --check --json   # JSON output
+tuncanary --version        # print the version
 ```
 
 Exit codes: `0` OK, `1` warning, `2` failure, `3` unconfirmed, `64` usage error. JSON keys and values will stay compatible across releases.

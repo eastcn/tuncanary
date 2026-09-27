@@ -307,12 +307,13 @@ public final class AppModel: ObservableObject {
             intranetSkippedText: intranetDecision.skippedText)
     }
 
-    /// 默认的诊断摘要文本：应用版本取 Info.plist，系统版本取 ProcessInfo，全文经过 `redactor`。
+    /// 默认的诊断摘要文本：应用版本取 Info.plist（不在应用包内运行时取 `AppIdentity.version`），
+    /// 系统版本取 ProcessInfo，全文经过 `redactor`。
     public static func defaultDiagnosticText(_ model: AppModel) -> String {
         let info = Bundle.main.infoDictionary
         let version = (info?["CFBundleShortVersionString"] as? String).map { v in
             (info?["CFBundleVersion"] as? String).map { "\(v)（\($0)）" } ?? v
-        } ?? "开发版"
+        } ?? "\(AppIdentity.version)（开发版）"
         let os = ProcessInfo.processInfo.operatingSystemVersion
         let osText = "\(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
         return model.diagnosticSummary(generatedAt: model.now(), appVersion: version, osVersion: osText)

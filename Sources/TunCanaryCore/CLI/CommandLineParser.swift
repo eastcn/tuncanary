@@ -39,6 +39,8 @@ public enum CommandLineMode: Sendable, Equatable {
     case app
     case check(CheckOptions)
     case help
+    /// `--version`：打印版本号。
+    case version
     /// 参数错误，退出码 64。
     case usageError(String)
 }
@@ -51,6 +53,7 @@ public enum CommandLineParser {
       TunCanary --check [--full] [--json]    单次检查
         --full   完整检测全部站点（默认只做一轮轻测）
         --json   输出 JSON
+      TunCanary --version                    打印版本号
     退出码：0 正常，1 需关注，2 故障，3 未确认（含超时），64 参数错误
     """
 
@@ -59,6 +62,7 @@ public enum CommandLineParser {
         var full = false
         var json = false
         var help = false
+        var version = false
         var unknown: [String] = []
         var system: [String] = []
 
@@ -70,6 +74,7 @@ public enum CommandLineParser {
             case "--full": full = true
             case "--json": json = true
             case "--help", "-h": help = true
+            case "--version": version = true
             default:
                 if argument.hasPrefix("-psn_") {
                     system.append(argument)
@@ -88,6 +93,14 @@ public enum CommandLineParser {
         }
 
         if help { return .help }
+        if version {
+            // 只接受单独使用，避免脚本误以为 `--check --version` 做了检查。
+            let others = arguments.filter { $0 != "--version" }
+            guard others.isEmpty else {
+                return .usageError("--version 不能与其他参数一起使用")
+            }
+            return .version
+        }
         if check {
             let rejected = system + unknown
             guard rejected.isEmpty else {

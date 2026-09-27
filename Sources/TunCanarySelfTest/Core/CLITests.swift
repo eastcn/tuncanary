@@ -60,6 +60,17 @@ enum CLITests {
                     }
                 }
             },
+            TestCase("--version 单独使用，与其他参数混用返回 64") { t in
+                t.expectEqual(CommandLineParser.parse(["--version"]), .version)
+                for arguments in [["--version", "--check"], ["--check", "--version", "--json"], ["--version", "-x"]] {
+                    if case .usageError(let message) = CommandLineParser.parse(arguments) {
+                        t.expectContains(message, "--version")
+                    } else {
+                        t.fail("\(arguments) 应返回参数错误")
+                    }
+                }
+                t.expectContains(CommandLineParser.usage, "--version")
+            },
             TestCase("退出码映射 0/1/2/3") { t in
                 t.expectEqual(CLIExitCode(severity: .ok).rawValue, 0)
                 t.expectEqual(CLIExitCode(severity: .warning).rawValue, 1)
@@ -244,6 +255,7 @@ enum CLITests {
                 let json = verdict(first, first).renderJSON(redactor: redactor)
                 let object = try t.require(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
                 t.expectEqual(object["exitCode"] as? Int, 2)
+                t.expectEqual(object["appVersion"] as? String, AppIdentity.version)
                 let faults = try t.require(object["faults"] as? [[String: Any]])
                 t.expectEqual(faults.compactMap { $0["key"] as? String }, ["dns.notRestored"])
                 t.expectNotContains(json, "192.168.0.1")

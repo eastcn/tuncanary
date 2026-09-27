@@ -29,6 +29,8 @@ enum TunCanaryMain {
         switch CommandLineParser.parse(arguments) {
         case .help:
             print(CommandLineParser.usage)
+        case .version:
+            print("\(AppIdentity.name) \(AppIdentity.version)")
         case .usageError(let message):
             fail(message + "\n" + CommandLineParser.usage, code: CLIExitCode.usage.rawValue)
         case .check(let options):
