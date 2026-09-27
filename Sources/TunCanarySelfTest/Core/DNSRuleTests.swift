@@ -24,6 +24,18 @@ enum DNSRuleTests {
         return snapshot
     }
 
+    /// Example VPN 已连接，主网络与代理状态同 `snapshot`。
+    static func connected(saved: [String], canary: [IPv4] = [fakeAnswer], tunOn: Bool = true) -> LocalSnapshot {
+        var connected = VPNTests.exampleConnected()
+        let base = snapshot(saved: saved, canary: canary, tunOn: tunOn)
+        connected.clashConfig = base.clashConfig
+        connected.mihomoRunning = base.mihomoRunning
+        connected.primaryService = base.primaryService
+        connected.mihomoDNS = base.mihomoDNS
+        connected.canary = base.canary
+        return connected
+    }
+
     static func evaluate(_ snapshot: LocalSnapshot, _ settings: AppSettings = AppSettings(),
                          adapters: [VPNAdapterConfig] = []) -> LocalAssessment {
         LocalEvaluator(paths: VPNTests.paths, adapters: adapters)
@@ -94,6 +106,54 @@ enum DNSRuleTests {
                 let relaxed = evaluate(connected, AppSettings(connectedDNSRule: .notSet), adapters: [VPNTests.example])
                 t.expectEqual(relaxed.card(.primaryDNS)?.conclusion, "VPN 已连接（不检查 DNS）")
                 t.expectEqual(relaxed.faultKeys, [])
+            },
+            TestCase("由代理接管：连接期按断开期规则检查，内网站点照常探测") { t in
+                let settings = AppSettings(expectedDNS: ["192.0.2.53"], connectedDNSRule: .proxyTakeover)
+                let ok = evaluate(connected(saved: ["192.0.2.53"]), settings, adapters: [VPNTests.example])
+                let dns = try t.require(ok.card(.primaryDNS))
+                t.expectEqual(ok.vpnState, .connected)
+                t.expectEqual(dns.severity, .ok)
+                t.expectEqual(dns.conclusion, "VPN 已连接，由代理接管：DNS 为 192.0.2.53，符合预期")
+                t.expectEqual(dns.hint, "连接期由代理接管；启用内网站点探测，内网站点失败时先检查代理能否解析内网域名")
+                t.expect(ok.intranetProbeEnabled)
+                t.expectNil(ok.learnableExpectedDNS, "连接期的保存值不能作为断开后的预期")
+                t.expect(dns.evidence.contains("系统解析 www.google.com 返回 fake-ip 198.18.0.26"), "\(dns.evidence)")
+            },
+            TestCase("由代理接管：保存值被 VPN 改写 → 红 dns.notTakenOver") { t in
+                let settings = AppSettings(expectedDNS: ["192.0.2.53"], connectedDNSRule: .proxyTakeover)
+                let leak = evaluate(connected(saved: ["10.9.0.53"], canary: [realAnswer]), settings,
+                                    adapters: [VPNTests.example])
+                let dns = try t.require(leak.card(.primaryDNS))
+                t.expectEqual(dns.severity, .critical)
+                t.expectEqual(leak.faultKeys, [.dnsNotTakenOver])
+                t.expectEqual(dns.conclusion, "VPN 已连接、TUN 运行中，DNS 未由代理接管为 192.0.2.53")
+                t.expectEqual(dns.hint, "连接期 DNS 查询绕过了代理。把网络服务的 DNS 改为 192.0.2.53；VPN 客户端可能会再次改写")
+                t.expectEqual(dns.evidence.first, "保存值：10.9.0.53（VPN 下发的 DNS）")
+                t.expect(dns.evidence.contains("系统解析 www.google.com 返回真实地址 192.0.2.80"), "\(dns.evidence)")
+                t.expect(leak.intranetProbeEnabled)
+
+                let empty = AppSettings(disconnectedDNSRule: .empty, connectedDNSRule: .proxyTakeover)
+                let emptyLeak = evaluate(connected(saved: ["10.9.0.53"]), empty, adapters: [VPNTests.example])
+                t.expectEqual(emptyLeak.card(.primaryDNS)?.conclusion, "VPN 已连接、TUN 运行中，DNS 未由代理接管（应为空）")
+                t.expectEqual(emptyLeak.card(.primaryDNS)?.hint,
+                              "连接期 DNS 查询绕过了代理。清空网络服务保存的 DNS；VPN 客户端可能会再次改写")
+            },
+            TestCase("由代理接管：保存值符合但系统解析返回真实地址 → 红 dns.bypassProxy") { t in
+                let settings = AppSettings(expectedDNS: ["192.0.2.53"], connectedDNSRule: .proxyTakeover)
+                let result = evaluate(connected(saved: ["192.0.2.53"], canary: [realAnswer]), settings,
+                                      adapters: [VPNTests.example])
+                t.expectEqual(result.faultKeys, [.dnsBypassProxy])
+                let notSet = AppSettings(connectedDNSRule: .proxyTakeover)
+                let fake = evaluate(connected(saved: ["10.9.0.53"]), notSet, adapters: [VPNTests.example])
+                t.expectEqual(fake.card(.primaryDNS)?.conclusion, "VPN 已连接，由代理接管：系统解析返回 fake-ip，DNS 经过代理")
+                t.expectEqual(evaluate(connected(saved: ["10.9.0.53"], canary: [realAnswer]), notSet,
+                                       adapters: [VPNTests.example]).faultKeys, [.dnsBypassProxy])
+            },
+            TestCase("由代理接管：TUN 关闭时不检查，也不提示残留") { t in
+                let settings = AppSettings(expectedDNS: ["192.0.2.53"], connectedDNSRule: .proxyTakeover)
+                let result = evaluate(connected(saved: ["192.0.2.53"], tunOn: false), settings, adapters: [VPNTests.example])
+                t.expectEqual(result.card(.primaryDNS)?.conclusion, "VPN 已连接、TUN 已关闭，不检查 DNS")
+                t.expectEqual(result.faultKeys, [])
             },
             TestCase("恢复步骤：未指定地址时不写具体 DNS") { t in
                 let generic = RecoveryGuide.steps(serviceName: "Wi-Fi")

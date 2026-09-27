@@ -76,6 +76,7 @@ enum UIAppModelTests {
             .gracePeriod: (.unknown, "切换中"),
             .intranetNotConfigured: (.ok, "正常"),
             .vpnConnected: (.ok, "正常"),
+            .proxyTakeover: (.ok, "正常"),
         ]
         for scenario in PreviewScenario.allCases {
             let model = AppModel.preview(scenario)

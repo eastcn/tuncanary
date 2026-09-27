@@ -24,11 +24,15 @@ public enum ConnectedDNSRule: String, Sendable, Equatable, Codable, CaseIterable
     case notSet
     /// 是 VPN 适配器报告的 DNS 的子集；适配器不报告 DNS 时不检查。
     case vpnProvided
+    /// 由代理接管：TUN 运行时与断开期同样检查（保存的 DNS 符合断开期规则，系统解析返回 fake-ip）。
+    /// 内网域名由代理按域名策略解析。
+    case proxyTakeover
 
     public var displayName: String {
         switch self {
         case .notSet: return "不检查"
         case .vpnProvided: return "VPN 下发的 DNS"
+        case .proxyTakeover: return "由代理接管（与断开时相同）"
         }
     }
 }

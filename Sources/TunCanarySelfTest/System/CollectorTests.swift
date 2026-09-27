@@ -145,6 +145,41 @@ enum CollectorTests {
 
     static var fileSuite: TestSuite {
         TestSuite("System.FileReaders", [
+            TestCase("DNS 守护进程：未安装、已安装、文件缺失或损坏") { t in
+                let dir = try SystemTestKit.makeTemporaryDirectory()
+                defer { SystemTestKit.removeDirectory(dir) }
+                let paths = DNSGuardPaths(root: dir.path)
+                let reader = DNSGuardReader(paths: paths)
+                t.expectEqual(reader.read(), .collected(.notInstalled))
+
+                let manager = FileManager.default
+                try manager.createDirectory(atPath: (paths.launchDaemonFile as NSString).deletingLastPathComponent,
+                                            withIntermediateDirectories: true)
+                try "<plist/>".write(toFile: paths.launchDaemonFile, atomically: true, encoding: .utf8)
+                t.expectEqual(reader.read(), .collected(DNSGuardSnapshot(installed: true)), "只有 LaunchDaemon")
+
+                try manager.createDirectory(atPath: paths.supportDirectory, withIntermediateDirectories: true)
+                try #"{"targetDNS":["192.0.2.53"],"connectedTakeover":{"enabled":false}}"#
+                    .write(toFile: paths.configFile, atomically: true, encoding: .utf8)
+                try #"{"lastRun":{"date":"2026-09-26T12:00:00Z","phase":"disconnected","outcome":"compliant"}}"#
+                    .write(toFile: paths.stateFile, atomically: true, encoding: .utf8)
+                try """
+                {"date":"2026-09-26T11:59:00Z","phase":"disconnected","outcome":"written"}
+                broken
+                {"date":"2026-09-26T12:00:00Z","phase":"disconnected","outcome":"compliant"}
+                """.write(toFile: paths.eventLogFile, atomically: true, encoding: .utf8)
+                let snapshot = try t.require(reader.read().value)
+                t.expect(snapshot.installed)
+                t.expectEqual(snapshot.config, .collected(DNSGuardConfigSummary(targetDNS: ["192.0.2.53"])))
+                t.expectEqual(snapshot.state.value?.lastRun?.outcome, .compliant)
+                t.expectEqual(snapshot.recentEvents.map(\.outcome), [.written, .compliant])
+
+                try "{}".write(toFile: paths.configFile, atomically: true, encoding: .utf8)
+                chmod(paths.stateFile, 0o000)
+                let broken = try t.require(reader.read().value)
+                t.expectEqual(broken.config, .failed(reason: "配置缺少 targetDNS"))
+                t.expectEqual(broken.state, .failed(reason: "权限不足"))
+            },
             TestCase("不存在、不可读与目录分开表示") { t in
                 let dir = try SystemTestKit.makeTemporaryDirectory()
                 defer { SystemTestKit.removeDirectory(dir) }

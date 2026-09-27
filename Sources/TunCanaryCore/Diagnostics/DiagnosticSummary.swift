@@ -88,6 +88,12 @@ public struct DiagnosticSummary: Sendable {
                 lines.append("[\(card.severity.displayName)] \(card.title)：\(card.conclusion)")
                 if let hint = card.hint { lines.append("  提示：\(hint)") }
                 for item in card.evidence { lines.append("  · \(item)") }
+                if let summary = card.dnsGuard {
+                    for line in summary.lines(timeZone: timeZone) { lines.append("  \(line)") }
+                    for event in summary.recentEvents {
+                        lines.append("  · 守护进程事件 \(DateText.format(event.date, timeZone: timeZone))：\(event.text)")
+                    }
+                }
             }
             if !local.diagnosticNotes.isEmpty {
                 lines.append("")

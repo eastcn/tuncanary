@@ -25,6 +25,8 @@ public struct FaultKey: RawRepresentable, Hashable, Comparable, Sendable, Codabl
     public static let dnsNotRestored: FaultKey = "dns.notRestored"
     /// VPN 已连接，但主网络 DNS 不是 VPN 下发的 DNS（黄）。
     public static let dnsVPNMissing: FaultKey = "dns.vpnDNSMissing"
+    /// 连接期规则为“由代理接管”：VPN 已连接、TUN 运行，但主网络 DNS 不符合断开期规则，查询绕过代理（红）。
+    public static let dnsNotTakenOver: FaultKey = "dns.notTakenOver"
     /// TUN 以 fake-ip 模式运行，但系统解析返回真实地址，DNS 绕过了代理（红）。
     public static let dnsBypassProxy: FaultKey = "dns.bypassProxy"
     /// TUN 关闭，但主网络 DNS 仍含预期 DNS（黄）。

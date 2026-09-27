@@ -195,6 +195,13 @@ struct DNSRulesSection: View {
                 ForEach(ConnectedDNSRule.allCases, id: \.self) { Text($0.displayName).tag($0) }
             }
             .font(.system(size: 12.5))
+            if model.settingsDraft.connectedDNSRule == .proxyTakeover {
+                Text("VPN 连接、TUN 运行时，也按上面的规则检查保存的 DNS，并要求系统解析返回 fake-ip。内网域名须由代理解析，内网站点探测失败通常说明代理没能解析内网域名。")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 14)
+            }
             Toggle(isOn: $model.settingsDraft.residualDNSWarning) {
                 Text("TUN 关闭时，提示仍残留的预期 DNS")
                     .font(.system(size: 12.5))

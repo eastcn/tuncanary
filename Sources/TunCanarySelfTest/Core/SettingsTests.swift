@@ -96,6 +96,10 @@ enum SettingsTests {
                 changed.residualDNSWarning = false
                 store.save(changed)
                 t.expectEqual(store.load(), changed)
+                changed.connectedDNSRule = .proxyTakeover
+                store.save(changed)
+                t.expectEqual(defaults.string(forKey: SettingsStore.Key.connectedDNSRule), "proxyTakeover")
+                t.expectEqual(store.load().connectedDNSRule, .proxyTakeover)
                 // 规则为“指定地址”但列表丢失时回落到不检查。
                 defaults.removeObject(forKey: SettingsStore.Key.expectedDNS)
                 defaults.set("equals", forKey: SettingsStore.Key.disconnectedDNSRule)

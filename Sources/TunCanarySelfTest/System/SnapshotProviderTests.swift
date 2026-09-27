@@ -12,7 +12,8 @@ enum SnapshotProviderTests {
             paths: KnownPaths(homeDirectory: home.path),
             adapters: [FixtureLoader.vpnAdapter],
             mihomoDNSTimeout: 1,
-            resolvesCanary: false
+            resolvesCanary: false,
+            dnsGuardPaths: DNSGuardPaths(root: home.path)
         )
         return SystemSnapshotProvider(configuration: configuration, now: { collectedAt })
     }
@@ -40,6 +41,7 @@ enum SnapshotProviderTests {
                 t.expectEqual(answers, [IPv4("198.18.0.26")!])
                 t.expectEqual(snapshot.vpnStatusFiles["example"], .missing)
                 t.expectEqual(snapshot.canary, .notTested)
+                t.expectEqual(snapshot.dnsGuard, .collected(.notInstalled), "临时根目录下没有守护进程")
                 t.expect(snapshot.processes.isCollected)
                 t.expect(snapshot.mihomoRunning.isCollected)
                 t.expect(!(snapshot.interfaces.value ?? []).isEmpty)
@@ -61,7 +63,7 @@ enum SnapshotProviderTests {
                 let configuration = SystemSnapshotProvider.Configuration(
                     paths: KnownPaths(homeDirectory: home.path),
                     proxySource: { ProxySource(client: .manual, manual: manual, canaryHost: "probe.example.test") },
-                    mihomoDNSTimeout: 1, resolvesCanary: false)
+                    mihomoDNSTimeout: 1, resolvesCanary: false, dnsGuardPaths: nil)
                 let snapshot = await SystemSnapshotProvider(configuration: configuration).collectSnapshot()
                 let config = try t.require(snapshot.clashConfig.value)
                 t.expect(config.isManual)
@@ -79,7 +81,7 @@ enum SnapshotProviderTests {
                 let bare = SystemSnapshotProvider.Configuration(
                     paths: KnownPaths(homeDirectory: home.path),
                     proxySource: { ProxySource(client: .manual, manual: ManualProxyConfig()) },
-                    resolvesCanary: false)
+                    resolvesCanary: false, dnsGuardPaths: nil)
                 let bareSnapshot = await SystemSnapshotProvider(configuration: bare).collectSnapshot()
                 t.expectEqual(bareSnapshot.mihomoDNS, .notApplicable)
                 t.expectEqual(bareSnapshot.mihomoRunning, .notCollected)

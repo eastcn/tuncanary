@@ -19,6 +19,8 @@ public enum PreviewScenario: String, Sendable, CaseIterable {
     case intranetNotConfigured
     /// VPN 已连接（连接期），内网站点参与探测。
     case vpnConnected
+    /// VPN 已连接，连接期由代理接管，DNS 守护进程已安装并写入成功。
+    case proxyTakeover
 
     public var title: String {
         switch self {
@@ -30,6 +32,7 @@ public enum PreviewScenario: String, Sendable, CaseIterable {
         case .gracePeriod: return "宽限期（切换中）"
         case .intranetNotConfigured: return "内网未配置"
         case .vpnConnected: return "VPN 已连接"
+        case .proxyTakeover: return "连接期由代理接管"
         }
     }
 }
@@ -38,7 +41,8 @@ extension AppModel {
     /// 构造示例状态的视图模型。动作全部为空操作。
     public static func preview(_ scenario: PreviewScenario, actions: AppActions = AppActions()) -> AppModel {
         let data = PreviewData.self
-        let settings = scenario == .intranetNotConfigured ? AppSettings(expectedDNS: ["119.29.29.29"]) : data.settings
+        var settings = scenario == .intranetNotConfigured ? AppSettings(expectedDNS: ["119.29.29.29"]) : data.settings
+        if scenario == .proxyTakeover { settings.connectedDNSRule = .proxyTakeover }
         let model = AppModel(
             settings: settings,
             actions: actions,
@@ -80,8 +84,8 @@ extension AppModel {
             model.siteHistory = data.history(google: .healthy)
             model.intranetDecision = .vpnUnconfirmed
             model.graceEndsAt = data.now.addingTimeInterval(8)
-        case .vpnConnected:
-            let local = data.connectedLocal()
+        case .vpnConnected, .proxyTakeover:
+            let local = scenario == .proxyTakeover ? data.takeoverLocal() : data.connectedLocal()
             model.apply(local: local, connectivityFaults: [], checkedAt: data.now.addingTimeInterval(-20))
             var history = data.history(google: .healthy)
             let intranet = SiteCatalog.intranet(url: settings.intranetURL!)
@@ -91,6 +95,7 @@ extension AppModel {
             model.siteHistory = history
             model.intranetDecision = SiteCatalog.intranetDecision(intranetURL: settings.intranetURL,
                                                                   vpnState: local.vpnState)
+            if scenario == .proxyTakeover { model.expandedCards = [.primaryDNS] }
         }
         return model
     }
@@ -224,6 +229,25 @@ enum PreviewData {
                     evidence: ["保存值：10.20.0.53", "VPN DNS：10.20.0.53"]),
             mihomoCard,
         ], vpn: .connected)
+    }
+
+    /// 连接期由代理接管：守护进程在 VPN 连接后把 DNS 改回预期值。
+    static func takeoverLocal() -> LocalAssessment {
+        let written = DNSGuardEvent(date: now.addingTimeInterval(-340), phase: .connected, outcome: .written)
+        let compliant = DNSGuardEvent(date: now.addingTimeInterval(-25), phase: .connected, outcome: .compliant)
+        var dns = dnsCard(.ok, "VPN 已连接，由代理接管：DNS 为 119.29.29.29，符合预期",
+                          hint: "连接期由代理接管；启用内网站点探测，内网站点失败时先检查代理能否解析内网域名",
+                          evidence: ["保存值：119.29.29.29", "系统解析 www.google.com 返回 fake-ip 198.18.0.26"])
+        dns.dnsGuard = DNSGuardSummary(
+            installed: true, lastRun: compliant, lastWrite: written,
+            recentEvents: [
+                DNSGuardEvent(date: now.addingTimeInterval(-370), phase: .connected, outcome: .skipped,
+                              reason: "代理无法解析内网探针"),
+                written, compliant,
+            ])
+        var local = connectedLocal()
+        local.cards[2] = dns
+        return local
     }
 
     // MARK: 站点

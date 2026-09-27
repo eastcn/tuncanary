@@ -201,6 +201,8 @@ public struct LocalSnapshot: Sendable, Equatable {
     public var canaryIPv6: CanaryIPv6Result
     /// 本轮系统解析 canary 查询的域名。
     public var canaryHost: String
+    /// DNS 守护进程的安装情况、配置和状态。只用于展示，不参与判定。
+    public var dnsGuard: Collected<DNSGuardSnapshot>
 
     public init(
         collectedAt: Date,
@@ -216,7 +218,8 @@ public struct LocalSnapshot: Sendable, Equatable {
         mihomoDNS: MihomoDNSProbeResult = .notCollected,
         canary: CanaryResult = .notTested,
         canaryIPv6: CanaryIPv6Result = .notTested,
-        canaryHost: String = PulseConstants.canaryHost
+        canaryHost: String = PulseConstants.canaryHost,
+        dnsGuard: Collected<DNSGuardSnapshot> = .notCollected
     ) {
         self.collectedAt = collectedAt
         self.clashConfig = clashConfig
@@ -232,6 +235,7 @@ public struct LocalSnapshot: Sendable, Equatable {
         self.canary = canary
         self.canaryIPv6 = canaryIPv6
         self.canaryHost = canaryHost
+        self.dnsGuard = dnsGuard
     }
 
     /// verge-mihomo 是否运行：优先用 `mihomoRunning`，未采集时从进程列表推断。

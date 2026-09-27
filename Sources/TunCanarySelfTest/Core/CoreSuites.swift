@@ -16,6 +16,7 @@ enum CoreSuites {
             LocalEvaluatorTests.suite,
             VPNTests.suite,
             DNSRuleTests.suite,
+            DNSGuardTests.suite,
             ProxyClientTests.suite,
             FakeIPFilterTests.suite,
             ConnectivityTests.suite,

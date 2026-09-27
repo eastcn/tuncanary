@@ -13,6 +13,7 @@ public enum SnapshotItem: String, Sendable, CaseIterable {
     case mihomoDNS
     case canary
     case canaryIPv6
+    case dnsGuard
 }
 
 /// 一轮采集的结果与耗时（秒），供诊断与性能核对。
@@ -50,6 +51,8 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
         public var resolvesCanary: Bool
         /// 是否查询 Mihomo DNS。
         public var probesMihomoDNS: Bool
+        /// DNS 守护进程的安装路径；为 nil 时不读取（测试中使用）。
+        public var dnsGuardPaths: DNSGuardPaths?
 
         public init(
             paths: KnownPaths = .currentUser(),
@@ -60,7 +63,8 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
             mihomoDNSHost: String = PulseConstants.mihomoDNSHost,
             canaryTimeout: TimeInterval = PulseConstants.commandTimeout,
             resolvesCanary: Bool = true,
-            probesMihomoDNS: Bool = true
+            probesMihomoDNS: Bool = true,
+            dnsGuardPaths: DNSGuardPaths? = DNSGuardPaths()
         ) {
             self.paths = paths
             self.adapters = { adapters }
@@ -71,6 +75,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
             self.canaryTimeout = canaryTimeout
             self.resolvesCanary = resolvesCanary
             self.probesMihomoDNS = probesMihomoDNS
+            self.dnsGuardPaths = dnsGuardPaths
         }
     }
 
@@ -125,6 +130,9 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
         async let storeTask = Blocking.timed { DynamicStoreReader().read() }
         async let statusTask = Blocking.timed { Self.collectVPNStatusFiles(adapters, paths: config.paths) }
         async let canaryTask = resolveCanary(host: source.canaryHost)
+        async let guardTask = Blocking.timed {
+            config.dnsGuardPaths.map { DNSGuardReader(paths: $0).read() } ?? .notCollected
+        }
         async let canaryIPv6Task = resolveCanaryIPv6(host: source.canaryHost)
 
         // Mihomo DNS 依赖配置中的端口，读完配置后立即发起，与其余各项并行。
@@ -141,6 +149,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
         let (statusFiles, statusDuration) = await statusTask
         let (canaryResult, canaryDuration) = await canaryTask
         let (canaryIPv6Result, canaryIPv6Duration) = await canaryIPv6Task
+        let (dnsGuard, guardDuration) = await guardTask
 
         let snapshot = LocalSnapshot(
             collectedAt: collectedAt,
@@ -159,7 +168,8 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
             mihomoDNS: mihomo,
             canary: canaryResult,
             canaryIPv6: canaryIPv6Result,
-            canaryHost: source.canaryHost
+            canaryHost: source.canaryHost,
+            dnsGuard: dnsGuard
         )
         return SnapshotCollectionReport(
             snapshot: snapshot,
@@ -175,6 +185,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
                 .mihomoDNS: mihomoDuration,
                 .canary: canaryDuration,
                 .canaryIPv6: canaryIPv6Duration,
+                .dnsGuard: guardDuration,
             ]
         )
     }

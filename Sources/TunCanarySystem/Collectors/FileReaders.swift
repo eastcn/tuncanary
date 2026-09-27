@@ -126,3 +126,54 @@ public struct VPNStatusFileReader: Sendable {
         }
     }
 }
+
+/// 读取 DNS 守护进程的安装情况、配置、状态文件和事件日志。只读，不要求 root：这些文件对普通用户可读。
+public struct DNSGuardReader: Sendable {
+    /// 配置和状态文件的大小上限。
+    public static let maxBytes = 256 << 10
+    /// 事件日志的大小上限（守护进程最多保留 200 条）。
+    public static let maxEventLogBytes = 1 << 20
+
+    public let paths: DNSGuardPaths
+
+    public init(paths: DNSGuardPaths = DNSGuardPaths()) {
+        self.paths = paths
+    }
+
+    public func read() -> Collected<DNSGuardSnapshot> {
+        switch LocalFileReader.read(paths.launchDaemonFile, maxBytes: Self.maxBytes) {
+        case .missing:
+            return .collected(.notInstalled)
+        case .failed(let reason):
+            // LaunchDaemon 对普通用户可读；读不到时无法确认是否安装。
+            return .failed(reason: "无法读取 LaunchDaemon：\(reason)")
+        case .data:
+            break
+        }
+        let config = parse(paths.configFile, DNSGuardFileParser.parseConfig)
+        let state = parse(paths.stateFile, DNSGuardFileParser.parseState)
+        var events: [DNSGuardEvent] = []
+        if case .data(let data) = LocalFileReader.read(paths.eventLogFile, maxBytes: Self.maxEventLogBytes) {
+            events = DNSGuardFileParser.parseEvents(data, limit: DNSGuardSummary.eventLimit)
+        }
+        return .collected(DNSGuardSnapshot(installed: true, config: config, state: state, recentEvents: events))
+    }
+
+    /// 文件不存在为 `.notCollected`，不可读或无法解析为 `.failed`。
+    private func parse<T: Sendable & Equatable>(_ path: String, _ parser: (Data) throws -> T) -> Collected<T> {
+        switch LocalFileReader.read(path, maxBytes: Self.maxBytes) {
+        case .missing:
+            return .notCollected
+        case .failed(let reason):
+            return .failed(reason: reason)
+        case .data(let data):
+            do {
+                return .collected(try parser(data))
+            } catch let error as DNSGuardFileParser.ParseError {
+                return .failed(reason: error.message)
+            } catch {
+                return .failed(reason: "解析失败")
+            }
+        }
+    }
+}

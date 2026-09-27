@@ -91,4 +91,6 @@ ps -axo pid,user,comm | grep -i 'vpn'
 
 设置中“VPN 连接时”选择“VPN 下发的 DNS”后，应用检查网络服务保存的 DNS 是否属于已连接适配器 `statusFile.dns` 报告的地址。适配器没有配置 `dns` 字段时，这条规则跳过。
 
+选择“由代理接管”时，连接期不看 `statusFile.dns`，按断开时的规则检查保存的 DNS。这时保存值属于 `statusFile.dns`，会在证据中标为“VPN 下发的 DNS”。
+
 “内网站点”只在 VPN 状态为已连接时探测。

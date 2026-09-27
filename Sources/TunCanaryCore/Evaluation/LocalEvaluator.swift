@@ -31,10 +31,14 @@ public struct LocalEvaluator: Sendable {
             makeDNSCard(snapshot, settings: settings, tun: tun, vpn: vpn, state: state, canary: canary),
             makeMihomoCard(snapshot, tun: tun, source: source),
         ]
-        // AAAA 结果只作证据：不改变严重程度，不产生故障键。
-        if let ipv6 = ipv6Evidence(snapshot, tun: tun),
-           let index = cards.firstIndex(where: { $0.kind == .primaryDNS }) {
-            cards[index].evidence.append(ipv6)
+        if let index = cards.firstIndex(where: { $0.kind == .primaryDNS }) {
+            // AAAA 结果只作证据：不改变严重程度，不产生故障键。
+            if let ipv6 = ipv6Evidence(snapshot, tun: tun) {
+                cards[index].evidence.append(ipv6)
+            }
+            // 守护进程同样只作展示，与卡片的判定分开。
+            cards[index].dnsGuard = DNSGuardSummary.make(snapshot.dnsGuard, settings: settings,
+                                                         now: snapshot.collectedAt)
         }
 
         // 宽限期内不判定持续异常：黄、红降为灰，不产生故障键。
@@ -364,8 +368,13 @@ public struct LocalEvaluator: Sendable {
         case .unconfirmed:
             return card(.unknown, "VPN 状态未确认，暂不评估 DNS 规则")
         case .connected:
-            guard settings.connectedDNSRule == .vpnProvided else {
+            switch settings.connectedDNSRule {
+            case .notSet:
                 return card(.ok, "VPN 已连接（不检查 DNS）")
+            case .proxyTakeover:
+                return proxyRuleCard(connected: true)
+            case .vpnProvided:
+                break
             }
             guard vpn.connectedReportsDNS else {
                 return card(.ok, "VPN 已连接（未配置 VPN DNS，不检查）")
@@ -382,6 +391,11 @@ public struct LocalEvaluator: Sendable {
             return card(.warning, "VPN 已连接，但 DNS 不是 VPN 下发的 DNS",
                         hint: "VPN DNS 未生效，内网域名可能无法解析", key: .dnsVPNMissing)
         case .disconnected:
+            return proxyRuleCard(connected: false)
+        }
+
+        /// 断开期，以及连接期规则为“由代理接管”时：按断开期规则检查保存值，TUN 运行时还检查系统解析是否经过代理。
+        func proxyRuleCard(connected: Bool) -> StatusCard {
             let rule = settings.disconnectedDNSRule
             let label = settings.proxySource.tunLabel
             // 接在中文后面：以英文开头时补一个空格，例如“重新开启 Clash TUN”“重新开启代理 TUN”。
@@ -402,11 +416,14 @@ public struct LocalEvaluator: Sendable {
                                     hint: "系统解析返回真实地址，DNS 查询绕过了代理。关闭并重新开启\(tunName)，再核对网络服务的 DNS 设置",
                                     key: .dnsBypassProxy)
                     }
+                    let prefix = connected ? "VPN 已连接，由代理接管：" : ""
+                    let hint = connected ? "连接期由代理接管；启用内网站点探测，内网站点失败时先检查代理能否解析内网域名" : nil
                     switch rule {
-                    case .equals: return card(.ok, "DNS 为 \(expectedText)，符合预期")
-                    case .empty: return card(.ok, "DNS 为空，符合预期")
+                    case .equals: return card(.ok, "\(prefix)DNS 为 \(expectedText)，符合预期", hint: hint)
+                    case .empty: return card(.ok, "\(prefix)DNS 为空，符合预期", hint: hint)
                     case .notSet:
-                        return card(.ok, canary.realAddresses == [] ? "系统解析返回 fake-ip，DNS 经过代理" : "未设置 DNS 规则")
+                        let text = canary.realAddresses == [] ? "系统解析返回 fake-ip，DNS 经过代理" : "未设置 DNS 规则"
+                        return card(.ok, prefix + text, hint: hint)
                     }
                 }
                 // 红色卡片同时展示“保存值为空或残留”和“系统解析返回真实地址”。
@@ -414,7 +431,7 @@ public struct LocalEvaluator: Sendable {
                 if saved.isEmpty {
                     evidence[0] = "保存值：空（DNS 已被清空）"
                 } else if !known.isEmpty && Set(saved).isSubset(of: known) {
-                    evidence[0] = "保存值：\(DNSList.display(saved))（残留的 VPN DNS）"
+                    evidence[0] = "保存值：\(DNSList.display(saved))（\(connected ? "VPN 下发的 DNS" : "残留的 VPN DNS")）"
                 } else if rule == .equals {
                     evidence[0] = "保存值：\(DNSList.display(saved))（与预期 \(expectedText) 不一致）"
                 } else {
@@ -422,9 +439,18 @@ public struct LocalEvaluator: Sendable {
                 }
                 if let canaryEvidence = canary.evidence { evidence.append(canaryEvidence) }
                 let target = rule == .equals ? "为 \(expectedText)" : "（应为空）"
+                if connected {
+                    let fix = rule == .equals ? "把网络服务的 DNS 改为 \(expectedText)" : "清空网络服务保存的 DNS"
+                    return card(.critical, "VPN 已连接、TUN 运行中，DNS 未由代理接管\(target)",
+                                hint: "连接期 DNS 查询绕过了代理。\(fix)；VPN 客户端可能会再次改写", key: .dnsNotTakenOver)
+                }
                 return card(.critical, "VPN 已断开、TUN 运行中，DNS 未恢复\(target)",
                             hint: "等待 VPN 完全断开后，关闭并重新开启\(tunName)", key: .dnsNotRestored)
             case .off:
+                // 连接期 TUN 关闭时由 VPN 下发 DNS，不检查残留。
+                if connected {
+                    return card(.ok, "VPN 已连接、TUN 已关闭，不检查 DNS")
+                }
                 let residual = rule == .equals && settings.residualDNSWarning ? expected.filter { saved.contains($0) } : []
                 if !residual.isEmpty {
                     return card(.warning, "TUN 已关闭，但 DNS 仍含 \(residual.joined(separator: "、"))",

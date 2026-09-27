@@ -25,7 +25,8 @@ struct MainPanel: View {
                             expanded: model.expandedCards.contains(card.kind),
                             toggle: { model.toggleEvidence(card.kind) },
                             showRecoveryLink: card.faultKey == .dnsNotRestored,
-                            openRecovery: { model.openRecovery() })
+                            openRecovery: { model.openRecovery() },
+                            timeZone: model.timeZone)
                     }
                     EgressIPSection(model: model)
                         .padding(.top, 8)

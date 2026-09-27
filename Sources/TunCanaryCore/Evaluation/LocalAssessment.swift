@@ -37,6 +37,8 @@ public struct StatusCard: Sendable, Equatable, Identifiable {
     public var evidence: [String]
     /// 黄或红时的故障键。
     public var faultKey: FaultKey?
+    /// DNS 守护进程信息，只出现在主网络 DNS 卡，与本卡的判定分开展示。
+    public var dnsGuard: DNSGuardSummary?
 
     public init(
         kind: StatusCardKind,
@@ -46,7 +48,8 @@ public struct StatusCard: Sendable, Equatable, Identifiable {
         conclusion: String,
         hint: String? = nil,
         evidence: [String] = [],
-        faultKey: FaultKey? = nil
+        faultKey: FaultKey? = nil,
+        dnsGuard: DNSGuardSummary? = nil
     ) {
         self.kind = kind
         self.title = title
@@ -56,6 +59,7 @@ public struct StatusCard: Sendable, Equatable, Identifiable {
         self.hint = hint
         self.evidence = evidence
         self.faultKey = faultKey
+        self.dnsGuard = dnsGuard
     }
 
     public var id: StatusCardKind { kind }

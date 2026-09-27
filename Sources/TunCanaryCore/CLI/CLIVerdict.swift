@@ -338,6 +338,24 @@ public struct CLIVerdict: Sendable, Equatable {
             var conclusion: String
             var hint: String?
             var evidence: [String]
+            /// 只出现在主网络 DNS 项；未读取守护进程时省略。
+            var dnsGuard: DNSGuard?
+        }
+
+        /// DNS 守护进程。与所在项的 `severity` 无关。
+        struct DNSGuard: Encodable {
+            struct Run: Encodable {
+                var at: String
+                var phase: String?
+                var outcome: String
+                var reason: String?
+            }
+
+            var installed: Bool
+            var error: String?
+            var lastRun: Run?
+            var lastWrite: Run?
+            var notices: [String]
         }
 
         struct SiteItem: Encodable {
@@ -414,7 +432,21 @@ public struct CLIVerdict: Sendable, Equatable {
             },
             items: cards.map {
                 JSONPayload.Item(kind: $0.kind.rawValue, title: r($0.title), severity: $0.severity.rawValue,
-                                 conclusion: r($0.conclusion), hint: $0.hint.map(r), evidence: $0.evidence.map(r))
+                                 conclusion: r($0.conclusion), hint: $0.hint.map(r), evidence: $0.evidence.map(r),
+                                 dnsGuard: $0.dnsGuard.map { summary in
+                                     func run(_ event: DNSGuardEvent?) -> JSONPayload.DNSGuard.Run? {
+                                         event.map {
+                                             JSONPayload.DNSGuard.Run(
+                                                 at: DateText.iso8601($0.date, timeZone: timeZone),
+                                                 phase: $0.phase?.rawValue, outcome: $0.outcome.rawValue,
+                                                 reason: $0.reason.map(r))
+                                         }
+                                     }
+                                     return JSONPayload.DNSGuard(
+                                         installed: summary.installed, error: summary.failureReason.map(r),
+                                         lastRun: run(summary.lastRun), lastWrite: run(summary.lastWrite),
+                                         notices: summary.notices.map(r))
+                                 })
             },
             sites: siteResults.map {
                 JSONPayload.SiteItem(
