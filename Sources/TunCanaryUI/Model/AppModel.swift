@@ -18,6 +18,10 @@ public final class AppModel: ObservableObject {
     @Published public var intranetDecision: IntranetProbeDecision
     /// Tailnet 子网探测决策。
     @Published public var tailnetDecision: TailnetProbeDecision
+    /// 各站点最近一次代理诊断（只在内存中）。
+    @Published public var siteDiagnoses: [String: SiteDiagnosis] = [:]
+    /// 正在诊断的站点。
+    @Published public var diagnosingSiteIDs: Set<String> = []
     /// 最近一次完成检查的时间。
     @Published public var lastCheckedAt: Date?
     /// 检查进度；nil 表示空闲。
@@ -152,8 +156,31 @@ public final class AppModel: ObservableObject {
     }
 
     public var siteGroups: [SiteGroupPresentation] {
-        PopoverFormatter.siteGroups(history: siteHistory, intranet: intranetDecision, tailnet: tailnetDecision,
-                                    redactor: redactor, sites: settings.enabledSites)
+        let groups = PopoverFormatter.siteGroups(history: siteHistory, intranet: intranetDecision, tailnet: tailnetDecision,
+                                                 redactor: redactor, sites: settings.enabledSites)
+        let enabled = settings.proxyDiagnosticsEnabled
+        return groups.map { group in
+            var group = group
+            group.rows = group.rows.map { row in
+                var row = row
+                // Tailnet 子网是 TCP 探测，不经代理规则，不提供诊断；未探测的 VPN 站点也不提供。
+                row.canDiagnose = enabled && group.group != .tailnet
+                    && !(group.group == .intranet && intranetDecision.site == nil)
+                row.isDiagnosing = diagnosingSiteIDs.contains(row.id)
+                if let diagnosis = siteDiagnoses[row.id] {
+                    let kind = diagnosis.manual ? "手动诊断" : "自动诊断"
+                    row.diagnosisLines = ["\(kind) \(DateText.format(diagnosis.diagnosedAt, timeZone: timeZone))"]
+                        + diagnosis.lines.map(redactor.redact)
+                }
+                return row
+            }
+            return group
+        }
+    }
+
+    /// 站点行上的“诊断”按钮。
+    public func diagnoseSite(_ siteID: String) {
+        actions.diagnoseSite(siteID)
     }
 
     public var recoverySteps: [String] {
@@ -333,6 +360,7 @@ public final class AppModel: ObservableObject {
             intranetSkippedText: intranetDecision.skippedText,
             tailnetConfigured: settings.tailnetTarget != nil,
             tailnetSkippedText: tailnetDecision.skippedText,
+            diagnoses: Array(siteDiagnoses.values),
             events: recentEvents)
     }
 

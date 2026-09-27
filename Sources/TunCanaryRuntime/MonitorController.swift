@@ -75,6 +75,15 @@ public final class MonitorController {
     private var recorder = FaultEventRecorder()
     /// 故障事件日志；为 nil 时只在内存中保留最近事件。
     private let eventStore: FaultEventStore?
+    /// 站点失败诊断；为 nil 时不提供诊断。
+    private let diagnoser: SiteDiagnosing?
+    /// 待诊断的站点（按顺序逐个执行，同一站点不重复排队）。
+    private var diagnosisQueue: [(site: Site, manual: Bool)] = []
+    private var diagnosisTask: Task<Void, Never>?
+    /// 最近一次本机评估中代理 TUN 是否运行，诊断时用来解释“日志中没有这次连接”。
+    private var tunRunning = false
+    /// 每轮检查最多自动诊断几个站点。
+    static let autoDiagnosisLimit = 3
 
     public init(model: AppModel,
                 snapshotProvider: LocalSnapshotProviding,
@@ -85,6 +94,7 @@ public final class MonitorController {
                 adapters: VPNAdapterSet = VPNAdapterSet(),
                 adapterRegistry: VPNAdapterRegistry? = nil,
                 eventStore: FaultEventStore? = nil,
+                diagnoser: SiteDiagnosing? = nil,
                 clock: MonitorClock = .live) {
         self.model = model
         self.snapshotProvider = snapshotProvider
@@ -94,6 +104,7 @@ public final class MonitorController {
         self.paths = paths
         self.adapterRegistry = adapterRegistry
         self.eventStore = eventStore
+        self.diagnoser = diagnoser
         let initialAdapters = adapterRegistry?.current ?? adapters
         self.evaluator = LocalEvaluator(paths: paths, adapterSet: initialAdapters)
         self.clock = clock
@@ -140,6 +151,7 @@ public final class MonitorController {
         model.checkProgress = nil
         progressRunToken = nil
         model.graceEndsAt = nil
+        cancelDiagnoses()
     }
 
     /// 界面“立即复测”：本机检查 + 全部站点，每站 3 次，最多 3 站并发。
@@ -188,6 +200,12 @@ public final class MonitorController {
         if settings.tailnetTarget != previous.tailnetTarget { retargeted.insert(SiteCatalog.tailnetID) }
         tracker.reset(siteIDs: retargeted)
         retainCurrentHistory(settings: settings, previous: previous)
+        if settings.proxyDiagnosticsEnabled {
+            for id in retargeted { model.siteDiagnoses[id] = nil }
+        } else {
+            cancelDiagnoses()
+            model.siteDiagnoses = [:]
+        }
         // 取消旧周期，使保存后的下一次后台检查使用新间隔。
         cancelTimers()
         if running { startTimers() }
@@ -344,6 +362,7 @@ public final class MonitorController {
         guard isCurrent(version) else { return }
         let inGrace = grace.isInGracePeriod(at: clock.now())
         let local = evaluator.evaluate(snapshot: snapshot, settings: settings, inGracePeriod: inGrace)
+        tunRunning = local.tunState.isRunning
         let decision = SiteCatalog.intranetDecision(intranetURL: settings.intranetURL,
                                                     vpnState: local.vpnState)
         model.intranetDecision = decision
@@ -374,6 +393,9 @@ public final class MonitorController {
                     }
                 })
             guard isCurrent(version), results.count == sites.count else { return }
+            if settings.proxyDiagnosticsEnabled && diagnoser != nil {
+                scheduleAutoDiagnoses(results)
+            }
             model.siteHistory.record(results)
             tracker.recordRound(results, intranetEligible: decision.site != nil, tailnetEligible: tailnet.site != nil)
         }
@@ -391,6 +413,69 @@ public final class MonitorController {
            isCurrent(version) {
             await notifier.deliver(notification)
         }
+    }
+
+    // MARK: 站点失败诊断
+
+    /// 界面“诊断”按钮：对已启用的站点或正在探测的 VPN 站点诊断一次。
+    public func diagnose(siteID: String) {
+        guard diagnoser != nil, model.settings.proxyDiagnosticsEnabled else { return }
+        let candidates = model.settings.enabledSites + (model.intranetDecision.site.map { [$0] } ?? [])
+        guard let site = candidates.first(where: { $0.id == siteID }) else { return }
+        enqueueDiagnosis(site, manual: true)
+    }
+
+    /// 本轮失败的站点中，首次失败或失败类别变化的才诊断，避免对节点反复测速；恢复后清除自动诊断的结果。
+    private func scheduleAutoDiagnoses(_ results: [SiteResult]) {
+        var scheduled = 0
+        for result in results where Self.isDiagnosable(result.site) {
+            let previous = model.siteHistory.latest(for: result.site.id)
+            if result.isFailure {
+                let changed = previous.map { !$0.isFailure || $0.category != result.category } ?? true
+                guard changed, scheduled < Self.autoDiagnosisLimit else { continue }
+                enqueueDiagnosis(result.site, manual: false)
+                scheduled += 1
+            } else if model.siteDiagnoses[result.site.id]?.manual == false {
+                model.siteDiagnoses[result.site.id] = nil
+            }
+        }
+    }
+
+    /// 只诊断 HTTP 站点；Tailnet 子网是 TCP 探测，不经代理规则。
+    private static func isDiagnosable(_ site: Site) -> Bool {
+        let scheme = site.url.scheme?.lowercased()
+        return (scheme == "http" || scheme == "https") && site.group != .tailnet
+    }
+
+    private func enqueueDiagnosis(_ site: Site, manual: Bool) {
+        guard !model.diagnosingSiteIDs.contains(site.id),
+              !diagnosisQueue.contains(where: { $0.site.id == site.id }) else { return }
+        diagnosisQueue.append((site, manual))
+        model.diagnosingSiteIDs.insert(site.id)
+        runDiagnosesIfIdle()
+    }
+
+    private func runDiagnosesIfIdle() {
+        guard diagnosisTask == nil, let diagnoser else { return }
+        diagnosisTask = Task { [weak self] in
+            while let self, !Task.isCancelled, !self.diagnosisQueue.isEmpty {
+                let (site, manual) = self.diagnosisQueue.removeFirst()
+                let diagnosis = await diagnoser.diagnose(site: site, tunRunning: self.tunRunning, manual: manual)
+                guard !Task.isCancelled else { break }
+                self.model.diagnosingSiteIDs.remove(site.id)
+                if self.model.settings.proxyDiagnosticsEnabled {
+                    self.model.siteDiagnoses[site.id] = diagnosis
+                }
+            }
+            self?.diagnosisTask = nil
+        }
+    }
+
+    private func cancelDiagnoses() {
+        diagnosisTask?.cancel()
+        diagnosisTask = nil
+        diagnosisQueue = []
+        model.diagnosingSiteIDs = []
     }
 
     /// 写入事件日志，并更新界面上的最近事件。

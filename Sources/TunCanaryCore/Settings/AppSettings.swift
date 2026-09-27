@@ -121,6 +121,8 @@ public struct AppSettings: Sendable, Equatable, Codable {
     public var intranetURL: URL?
     /// Tailnet 子网目标（IPv4:端口），只在经 Tailscale 路由时做 TCP 探测；未配置为 nil。
     public var tailnetTarget: TailnetTarget?
+    /// 站点访问失败时，读取代理日志查看命中的规则和节点。只读，默认关闭；只支持 Clash Verge Rev。
+    public var proxyDiagnosticsEnabled: Bool
     /// VPN 断开、TUN 运行时的 DNS 规则。
     public var disconnectedDNSRule: DisconnectedDNSRule
     /// `disconnectedDNSRule` 为 `.equals` 时的预期 DNS（一个或多个 IPv4）。
@@ -163,10 +165,12 @@ public struct AppSettings: Sendable, Equatable, Codable {
         localCheckInterval: TimeInterval = AppSettings.defaultLocalCheckInterval,
         lightProbeInterval: TimeInterval = AppSettings.defaultLightProbeInterval,
         sites: [Site] = SiteCatalog.defaultSites,
-        tailnetTarget: TailnetTarget? = nil
+        tailnetTarget: TailnetTarget? = nil,
+        proxyDiagnosticsEnabled: Bool = false
     ) {
         self.intranetURL = intranetURL
         self.tailnetTarget = tailnetTarget
+        self.proxyDiagnosticsEnabled = proxyDiagnosticsEnabled
         self.disconnectedDNSRule = disconnectedDNSRule ?? Self.inferredRule(expectedDNS)
         self.expectedDNS = expectedDNS
         self.connectedDNSRule = connectedDNSRule
@@ -191,6 +195,7 @@ public struct AppSettings: Sendable, Equatable, Codable {
         case intranetURL, disconnectedDNSRule, expectedDNS, connectedDNSRule, residualDNSWarning
         case proxyClient, manualProxy, canaryHost, checkPages, egressTargets
         case notificationsEnabled, localCheckInterval, lightProbeInterval, sites, tailnetTarget
+        case proxyDiagnosticsEnabled
     }
 
     /// 旧版 JSON 没有规则、周期和站点字段；缺失时沿用旧默认值。
@@ -214,6 +219,7 @@ public struct AppSettings: Sendable, Equatable, Codable {
             ?? Self.defaultLightProbeInterval
         sites = try values.decodeIfPresent([Site].self, forKey: .sites) ?? SiteCatalog.defaultSites
         tailnetTarget = try? values.decodeIfPresent(TailnetTarget.self, forKey: .tailnetTarget)
+        proxyDiagnosticsEnabled = try values.decodeIfPresent(Bool.self, forKey: .proxyDiagnosticsEnabled) ?? false
     }
 
     /// 实际检测的出口目标：按固定顺序去重，为空时回落到默认值。

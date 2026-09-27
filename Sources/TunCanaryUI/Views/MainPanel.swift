@@ -37,7 +37,7 @@ struct MainPanel: View {
                             .font(.system(size: 11.5)).foregroundColor(.secondary)
                     }
                     ForEach(model.siteGroups) { group in
-                        SiteGroupView(group: group)
+                        SiteGroupView(group: group, onDiagnose: { model.diagnoseSite($0) })
                             .padding(.bottom, 2)
                     }
                     RecentEventsSection(model: model)

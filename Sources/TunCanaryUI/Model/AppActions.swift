@@ -9,6 +9,8 @@ public struct AppActions {
     public var recheck: @MainActor () -> Void
     /// 立即重新读取 VPN 适配器目录，并做一次本机检查。
     public var reloadAdapters: @MainActor () -> Void
+    /// 站点行上的“诊断”：按站点 ID 触发一次代理诊断。
+    public var diagnoseSite: @MainActor (String) -> Void
     /// 保存设置（已通过 `SettingsValidator` 校验）。实现方负责持久化并按新设置复查。
     public var saveSettings: @MainActor (AppSettings) -> Void
     /// 开关登录时启动，返回操作后的系统实际状态；失败时抛错（错误信息会显示在设置页）。
@@ -37,6 +39,7 @@ public struct AppActions {
     public init(
         recheck: @escaping @MainActor () -> Void = {},
         reloadAdapters: @escaping @MainActor () -> Void = {},
+        diagnoseSite: @escaping @MainActor (String) -> Void = { _ in },
         saveSettings: @escaping @MainActor (AppSettings) -> Void = { _ in },
         setLoginItemEnabled: @escaping @MainActor (Bool) throws -> LoginItemStatus = { _ in .unavailable },
         loginItemStatus: @escaping @MainActor () -> LoginItemStatus = { .unavailable },
@@ -52,6 +55,7 @@ public struct AppActions {
     ) {
         self.recheck = recheck
         self.reloadAdapters = reloadAdapters
+        self.diagnoseSite = diagnoseSite
         self.saveSettings = saveSettings
         self.setLoginItemEnabled = setLoginItemEnabled
         self.loginItemStatus = loginItemStatus
@@ -79,11 +83,13 @@ public struct AppActions {
         loginItem: LoginItemControlling,
         recheck: @escaping @MainActor () -> Void,
         reloadAdapters: @escaping @MainActor () -> Void = {},
+        diagnoseSite: @escaping @MainActor (String) -> Void = { _ in },
         settingsDidChange: @escaping @MainActor (AppSettings) -> Void = { _ in }
     ) -> AppActions {
         AppActions(
             recheck: recheck,
             reloadAdapters: reloadAdapters,
+            diagnoseSite: diagnoseSite,
             saveSettings: { settings in
                 settingsStore.save(settings)
                 settingsDidChange(settings)

@@ -4,6 +4,7 @@ import TunCanaryCore
 /// 一个站点分组：组名 + 站点行。
 struct SiteGroupView: View {
     let group: SiteGroupPresentation
+    var onDiagnose: (String) -> Void = { _ in }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -25,7 +26,7 @@ struct SiteGroupView: View {
                         if index > 0 {
                             Divider().padding(.leading, 10)
                         }
-                        SiteRowView(row: row)
+                        SiteRowView(row: row, onDiagnose: { onDiagnose(row.id) })
                     }
                 }
                 .cardBackground(.neutral)
@@ -38,6 +39,7 @@ struct SiteGroupView: View {
 /// 错误原因与 VPN 站点说明另起一行，悬停提示也保留相同信息。
 struct SiteRowView: View {
     let row: SiteRowPresentation
+    var onDiagnose: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
@@ -69,6 +71,13 @@ struct SiteRowView: View {
                     .foregroundColor(row.latencyText == PopoverFormatter.noValue ? .secondary.opacity(0.7) : .primary.opacity(0.85))
                     .frame(minWidth: 50, alignment: .trailing)
                 HistoryDots(marks: row.history)
+                if row.canDiagnose {
+                    Button(row.isDiagnosing ? "诊断中" : "诊断", action: onDiagnose)
+                        .buttonStyle(.link)
+                        .font(.system(size: 11))
+                        .disabled(row.isDiagnosing)
+                        .help("复测一次，并从代理日志查看这次访问命中的规则和节点")
+                }
             }
             if let detail = row.detailText {
                 Text(detail)
@@ -76,12 +85,25 @@ struct SiteRowView: View {
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if !row.diagnosisLines.isEmpty {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(Array(row.diagnosisLines.enumerated()), id: \.offset) { index, line in
+                        Text(line)
+                            .font(.system(size: 10.5, weight: index == 0 ? .medium : .regular))
+                            .foregroundColor(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                }
+                .padding(.leading, 8)
+                .padding(.top, 2)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .help(row.detailText ?? "")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(row.accessibilityText))
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(([row.accessibilityText] + row.diagnosisLines).joined(separator: "，")))
     }
 }
 

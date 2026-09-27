@@ -69,6 +69,21 @@ enum LiveSmokeTests {
                     }
                 }
             },
+            TestCase("代理诊断：定位控制接口，抓取本进程连接的规则和节点", timeout: 40) { t in
+                guard case .success(let controller) = MihomoController.locate() else {
+                    log("未找到控制接口，跳过")
+                    return
+                }
+                log("控制接口：\(controller.socketPath)")
+                let diagnoser = ProxyDiagnoser(prober: URLSessionSiteProber())
+                let ok = await diagnoser.diagnose(site: SiteCatalog.github, tunRunning: true, manual: true)
+                for line in ok.lines { log("GitHub · \(line)") }
+                if case .proxied = ok.route {} else { t.fail("GitHub 的连接应出现在代理日志中：\(ok.route)") }
+                let failing = Site(id: "port81", name: "Google 81 端口", group: .overseas,
+                                   url: URL(string: "https://www.google.com:81/")!, isKey: false, inLightProbe: false)
+                let bad = await diagnoser.diagnose(site: failing, tunRunning: true, manual: true)
+                for line in bad.lines { log("81 端口 · \(line)") }
+            },
             TestCase("连续采集 3 轮的耗时", timeout: 30) { t in
                 let provider = SystemSnapshotProvider()
                 var durations: [TimeInterval] = []

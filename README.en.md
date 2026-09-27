@@ -78,6 +78,8 @@ Exit codes: `0` OK, `1` warning, `2` failure, `3` unconfirmed, `64` usage error.
 
 The tailnet subnet target is set in Settings as `IPv4:port`, for example `192.168.1.10:443`. The first probe may trigger macOS's Local Network permission prompt; if you deny it, the row shows that permission is missing and it does not count as a failure. Diagnostics and JSON only say whether a target is configured.
 
+"Diagnose proxy when a site fails" is off by default and works with Clash Verge Rev only. When a site first fails, or its failure type changes, the app retries once while following mihomo's log, finds the rule and outbound node this request hit, and, if the retry still fails through a node, has the proxy test that node's delay. Each site row also has a "诊断" button for a manual run. Results appear under the site row and in the diagnostics summary; they never change the verdict or trigger notifications. The control interface is the local socket Clash Verge Rev's service passes to the core (read from `verge-mihomo`'s arguments); it belongs to the current user and needs no secret. Failure details include error codes, and for TLS errors the underlying code and the server certificate's subject.
+
 ## DNS guard (optional)
 
 The menu bar app only reports problems. The DNS guard is a separate, optional component that is not installed by default. It runs as root and, while the proxy's TUN is running, sets the primary network service's saved DNS to a target you choose, so queries go back through the proxy.

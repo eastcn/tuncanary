@@ -66,3 +66,11 @@ public protocol LoginItemControlling: AnyObject {
     /// 打开“系统设置 → 登录项”。
     func openSystemSettings()
 }
+
+/// 站点失败诊断（实现见 TunCanarySystem 的 `ProxyDiagnoser`）：带观测复测一次，查看这次访问在代理中的走向。
+public protocol SiteDiagnosing: Sendable {
+    /// - Parameters:
+    ///   - tunRunning: 代理 TUN 是否在运行，决定“日志中没有这次连接”的解释。
+    ///   - manual: 是否由界面上的按钮触发。
+    func diagnose(site: Site, tunRunning: Bool, manual: Bool) async -> SiteDiagnosis
+}

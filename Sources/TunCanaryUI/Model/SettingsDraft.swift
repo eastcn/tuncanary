@@ -66,6 +66,7 @@ public struct SettingsDraft: Sendable, Equatable {
     public var intranetURL: String
     /// Tailnet 子网目标（IPv4:端口）；留空表示未配置。
     public var tailnetTarget: String
+    public var proxyDiagnosticsEnabled: Bool
     public var disconnectedDNSRule: DisconnectedDNSRule
     public var expectedDNS: String
     public var connectedDNSRule: ConnectedDNSRule
@@ -99,10 +100,12 @@ public struct SettingsDraft: Sendable, Equatable {
         localCheckInterval: String = "20",
         lightProbeInterval: String = "120",
         sites: [SiteDraft] = SiteCatalog.defaultSites.map(SiteDraft.init(site:)),
-        tailnetTarget: String = ""
+        tailnetTarget: String = "",
+        proxyDiagnosticsEnabled: Bool = false
     ) {
         self.intranetURL = intranetURL
         self.tailnetTarget = tailnetTarget
+        self.proxyDiagnosticsEnabled = proxyDiagnosticsEnabled
         self.disconnectedDNSRule = disconnectedDNSRule ?? AppSettings.inferredRule(DNSList.split(expectedDNS))
         self.expectedDNS = expectedDNS
         self.connectedDNSRule = connectedDNSRule
@@ -137,7 +140,8 @@ public struct SettingsDraft: Sendable, Equatable {
             localCheckInterval: Self.intervalText(settings.localCheckInterval),
             lightProbeInterval: Self.intervalText(settings.lightProbeInterval),
             sites: settings.sites.map(SiteDraft.init(site:)),
-            tailnetTarget: settings.tailnetTarget?.description ?? "")
+            tailnetTarget: settings.tailnetTarget?.description ?? "",
+            proxyDiagnosticsEnabled: settings.proxyDiagnosticsEnabled)
     }
 
     private static func intervalText(_ value: TimeInterval) -> String {
@@ -318,7 +322,8 @@ public struct SettingsDraft: Sendable, Equatable {
                 localCheckInterval: TimeInterval(localInterval),
                 lightProbeInterval: TimeInterval(lightInterval),
                 sites: checkedSites,
-                tailnetTarget: tailnet)
+                tailnetTarget: tailnet,
+                proxyDiagnosticsEnabled: proxyDiagnosticsEnabled)
         }
         return validation
     }

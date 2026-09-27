@@ -92,6 +92,9 @@ scripts/uninstall.sh --clear-settings # 一并删除设置
 点击菜单栏图标，再点弹窗底部的“设置”。
 
 - **代理客户端**：选择 Clash Verge Rev 时，应用读取它的配置文件，只取 TUN 开关、DNS 端口、IPv6 开关、fake-ip 网段（含 IPv6 网段）和 fake-ip 过滤名单，不读 secret 和节点。其他客户端选“手动填写”，填 fake-ip 网段；代理 DNS 端口和核心进程名可选。
+- **站点失败时诊断代理**：默认关闭，只支持 Clash Verge Rev。开启后，站点首次失败或失败类型变化时，应用复测一次，同时订阅 mihomo 的日志，找到这次访问命中的规则和出站节点；复测仍失败且经过节点时，再对节点测一次延迟。站点行上的“诊断”按钮可以随时手动诊断。结果显示在站点行下方和诊断摘要中，不参与判定，也不单独通知。
+  - 控制接口是 Clash Verge Rev 服务启动核心时指定的本机 socket（例如 `/var/run/clash-verge-service/users/<uid>/verge-mihomo.sock`），归当前用户所有，不需要 secret。应用从 `verge-mihomo` 的启动参数中读取它的路径。
+  - 失败说明里会附带错误码；TLS 错误还附带底层错误码和服务器证书的主题，用来区分证书问题和连接被中断。
 - **探针域名**：默认 `www.google.com`。它不能在代理的 fake-ip 过滤名单中，否则系统解析本来就返回真实 IP。应用会读取 Clash Verge Rev 的过滤名单并提示。
 - **DNS 规则**：可选。可以规定 VPN 断开、TUN 运行时网络服务保存的 DNS 应该是什么（不检查、指定地址或为空），以及 VPN 连接时的规则（不检查、VPN 下发的 DNS，或由代理接管）。选“由代理接管”时，VPN 连接期间也按断开时的规则检查，并要求系统解析经过代理；VPN 域名须由代理解析。系统解析确认经过代理时，设置页会出现“用当前值作为预期”按钮。
 - **VPN 适配器**：见 [docs/ADAPTERS.md](docs/ADAPTERS.md)。不配置也能用：核心检测不依赖 VPN。
@@ -167,8 +170,8 @@ sudo scripts/uninstall-dns-guard.sh
 ## 隐私
 
 - 菜单栏应用只读取状态，不修改 DNS、TUN、代理或 VPN 的设置。只有单独安装的 DNS 守护进程会修改网络服务保存的 DNS，见上一节。
-- 读取范围：代理配置中的上述字段、相关进程的可执行文件路径、网络接口与路由、SCDynamicStore 中的 DNS 设置、VPN 状态文件中适配器指定的字段，以及 `/Library/Application Support/TunCanary/` 下 DNS 守护进程的配置、状态和事件（守护进程是可选组件，未安装时这些文件不存在）。
-- 网络请求：站点检测、代理 DNS 查询、系统解析探针；有 Tailscale 隧道时，向 MagicDNS（`100.100.100.100`）反查本机地址，并解析得到的本机名称；配置了 Tailnet 子网目标时，对它做 TCP 连接探测。“检测出口”只在你点击时请求。
+- 读取范围：代理配置中的上述字段、相关进程的可执行文件路径、网络接口与路由、SCDynamicStore 中的 DNS 设置、VPN 状态文件中适配器指定的字段，以及 `/Library/Application Support/TunCanary/` 下 DNS 守护进程的配置、状态和事件（守护进程是可选组件，未安装时这些文件不存在）。开启代理诊断后，还会读取 `verge-mihomo` 的启动参数，并在诊断期间订阅代理日志；只取本应用发出的连接记录。
+- 网络请求：站点检测、代理 DNS 查询、系统解析探针；有 Tailscale 隧道时，向 MagicDNS（`100.100.100.100`）反查本机地址，并解析得到的本机名称；配置了 Tailnet 子网目标时，对它做 TCP 连接探测；代理诊断会让代理对命中的节点做一次延迟测试。“检测出口”只在你点击时请求。
 - 证据和诊断摘要里不写 MagicDNS 名称和 tailnet 域名。
 - 不收集、不上传任何数据。诊断摘要、命令行输出和通知都会脱敏：私有 IP 只保留首段，不包含 VPN 站点 URL 和主目录路径。
 - 本机写入：故障出现、变化和消失的记录保存在 `~/Library/Application Support/TunCanary/events.jsonl`，最多 200 条，内容同样脱敏，显示在弹窗的“最近事件”和诊断摘要中。`scripts/uninstall.sh --clear-settings` 会一并删除。

@@ -107,11 +107,13 @@ private final class PulseAppDelegate: NSObject, NSApplicationDelegate {
                                         snapshotProvider: SystemSnapshotProvider(configuration: snapshotConfiguration),
                                         prober: URLSessionSiteProber(), observer: SystemNetworkChangeObserver(),
                                         notifier: notifier, paths: paths, adapterRegistry: adapterRegistry,
-                                        eventStore: FaultEventStore(paths: paths))
+                                        eventStore: FaultEventStore(paths: paths),
+                                        diagnoser: ProxyDiagnoser(prober: URLSessionSiteProber()))
         self.monitor = monitor
         model.actions = AppActions.live(settingsStore: store, notifier: notifier, loginItem: loginItem,
                                          recheck: { [weak monitor] in monitor?.recheck() },
                                          reloadAdapters: { [weak monitor] in monitor?.reloadAdapters() },
+                                         diagnoseSite: { [weak monitor] in monitor?.diagnose(siteID: $0) },
                                          settingsDidChange: { [weak monitor] in monitor?.settingsDidChange($0) })
         let statusController = StatusItemController(model: model)
         self.statusController = statusController

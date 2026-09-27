@@ -147,7 +147,7 @@ private final class SingleRequestCoordinator: NSObject, URLSessionDataDelegate, 
             return
         }
         if let urlError = error as? URLError {
-            resume(.failure(ProbeCategory(urlErrorCode: urlError.code), detail: urlError.localizedDescription))
+            resume(.failure(ProbeCategory(urlErrorCode: urlError.code), detail: Self.describe(urlError)))
             return
         }
         if let error {
@@ -155,6 +155,26 @@ private final class SingleRequestCoordinator: NSObject, URLSessionDataDelegate, 
             return
         }
         resume(.failure(.connectionFailure, detail: "未知错误：既无响应也无错误"))
+    }
+
+    /// 错误说明，附带错误码；TLS 错误再附带底层错误码（如 -9806）和服务器证书的主题。
+    static func describe(_ error: URLError) -> String {
+        var message = error.localizedDescription.trimmingCharacters(in: .whitespaces)
+        while let last = message.last, "。.".contains(last) { message.removeLast() }
+        var text = "\(message)，错误码 \(error.errorCode)"
+        if let stream = error.userInfo["_kCFStreamErrorCodeKey"] as? Int, stream != 0, stream != error.errorCode {
+            text += "，底层 \(stream)"
+        }
+        if let trust = error.failureURLPeerTrust,
+           let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+           let leaf = chain.first,
+           let subject = SecCertificateCopySubjectSummary(leaf) as String? {
+            text += "，证书：\(subject)"
+            if chain.count > 1, let issuer = SecCertificateCopySubjectSummary(chain[1]) as String? {
+                text += "，签发者：\(issuer)"
+            }
+        }
+        return text
     }
 
     private func resume(_ outcome: RequestOutcome) {

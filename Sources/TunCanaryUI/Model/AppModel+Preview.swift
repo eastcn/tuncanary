@@ -43,6 +43,7 @@ extension AppModel {
         let data = PreviewData.self
         var settings = scenario == .intranetNotConfigured ? AppSettings(expectedDNS: ["119.29.29.29"]) : data.settings
         if scenario == .proxyTakeover { settings.connectedDNSRule = .proxyTakeover }
+        if scenario == .googleWarning { settings.proxyDiagnosticsEnabled = true }
         let model = AppModel(
             settings: settings,
             actions: actions,
@@ -65,6 +66,15 @@ extension AppModel {
             model.apply(local: local, connectivityFaults: faults, checkedAt: data.now.addingTimeInterval(-35))
             model.siteHistory = data.history(google: .failingTwice)
             model.intranetDecision = .vpnDisconnected
+            if scenario == .googleWarning {
+                let connection = ProxyLogConnection(
+                    network: "TCP", source: "198.18.0.1", process: "TunCanary", host: "www.google.com", port: 443,
+                    rule: "DomainSuffix(google.com)", chain: "节点选择[示例节点 HK 01]", error: "connect failed: i/o timeout")
+                model.siteDiagnoses[SiteCatalog.google.id] = SiteDiagnosis(
+                    siteID: SiteCatalog.google.id, siteName: "Google", diagnosedAt: data.now.addingTimeInterval(-30),
+                    manual: false, outcome: .failure(.timeout, detail: "请求超时，错误码 -1001"),
+                    route: .proxied(connection, viaTun: true), nodeDelay: .failed(reason: "超时"))
+            }
             if scenario == .checking {
                 model.checkProgress = CheckProgress(kind: .full, completed: 4, total: 9)
             }

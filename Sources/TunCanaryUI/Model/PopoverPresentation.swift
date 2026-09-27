@@ -110,6 +110,12 @@ public struct SiteRowPresentation: Sendable, Equatable, Identifiable {
     /// 最近 5 次（旧 → 新），不足时前面补空位。
     public var history: [HistoryMark]
     public var accessibilityText: String
+    /// 是否显示“诊断”按钮（开启代理诊断、HTTP 站点）。
+    public var canDiagnose: Bool = false
+    /// 诊断进行中。
+    public var isDiagnosing: Bool = false
+    /// 最近一次诊断的说明，第一行带时间。
+    public var diagnosisLines: [String] = []
 }
 
 /// 一个站点分组。

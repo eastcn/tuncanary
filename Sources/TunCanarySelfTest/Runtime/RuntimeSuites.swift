@@ -4,7 +4,7 @@ import TunCanaryRuntime
 import TunCanaryUI
 
 enum RuntimeSuites {
-    static var all: [TestSuite] { [suite, RuntimeReviewFixTests.suite] }
+    static var all: [TestSuite] { [suite, RuntimeReviewFixTests.suite, RuntimeDiagnosisTests.suite] }
 
     private static var suite: TestSuite {
         TestSuite("Runtime.MonitorController", [
@@ -474,7 +474,7 @@ final class RuntimeRig {
 
     init(category: ProbeCategory = .reachable, settings: AppSettings = FixtureLoader.legacySettings,
          scenario: FixtureLoader.Scenario = .a, adapterRegistry: VPNAdapterRegistry? = nil,
-         eventStore: FaultEventStore? = nil) async throws {
+         eventStore: FaultEventStore? = nil, diagnoser: SiteDiagnosing? = nil) async throws {
         let snapshot = try FixtureLoader.snapshot(scenario)
         provider = RuntimeSnapshotStub(snapshot)
         prober = RuntimeProberStub(category: category)
@@ -484,6 +484,7 @@ final class RuntimeRig {
                                        adapters: FixtureLoader.adapterSet,
                                        adapterRegistry: adapterRegistry,
                                        eventStore: eventStore,
+                                       diagnoser: diagnoser,
                                        clock: clock.monitorClock())
     }
     func start() { controller.start() }

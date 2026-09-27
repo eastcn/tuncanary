@@ -35,6 +35,8 @@ public struct DiagnosticSummary: Sendable {
     public var tailnetConfigured: Bool
     /// Tailnet 子网未探测时的说明。
     public var tailnetSkippedText: String?
+    /// 各站点最近一次代理诊断。
+    public var diagnoses: [SiteDiagnosis]
     /// 最近的故障事件（旧 → 新）。
     public var events: [FaultEvent]
 
@@ -49,6 +51,7 @@ public struct DiagnosticSummary: Sendable {
         intranetSkippedText: String? = nil,
         tailnetConfigured: Bool = false,
         tailnetSkippedText: String? = nil,
+        diagnoses: [SiteDiagnosis] = [],
         events: [FaultEvent] = []
     ) {
         self.generatedAt = generatedAt
@@ -61,6 +64,7 @@ public struct DiagnosticSummary: Sendable {
         self.intranetSkippedText = intranetSkippedText
         self.tailnetConfigured = tailnetConfigured
         self.tailnetSkippedText = tailnetSkippedText
+        self.diagnoses = diagnoses
         self.events = events
     }
 
@@ -132,6 +136,16 @@ public struct DiagnosticSummary: Sendable {
             tailnet += "（\(skipped)）"
         }
         lines.append(tailnet)
+
+        if !diagnoses.isEmpty {
+            lines.append("")
+            lines.append("代理诊断：")
+            for diagnosis in diagnoses.sorted(by: { $0.diagnosedAt < $1.diagnosedAt }) {
+                let kind = diagnosis.manual ? "手动" : "自动"
+                lines.append("\(diagnosis.siteName)（\(kind)，\(DateText.format(diagnosis.diagnosedAt, timeZone: timeZone))）")
+                for line in diagnosis.lines { lines.append("  · \(line)") }
+            }
+        }
 
         if !events.isEmpty {
             lines.append("")

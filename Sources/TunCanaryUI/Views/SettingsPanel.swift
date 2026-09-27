@@ -162,6 +162,15 @@ struct ProxyClientSection: View {
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                Toggle(isOn: $model.settingsDraft.proxyDiagnosticsEnabled) {
+                    Text("站点失败时诊断代理")
+                        .font(.system(size: 12.5))
+                }
+                .toggleStyle(.switch)
+                Text("站点访问失败时复测一次，同时通过 Clash Verge Rev 的本机控制接口读取代理日志，查看这次访问命中的规则和节点，并对节点测一次延迟。只读，不修改代理配置，不需要 secret。首次失败和失败类型变化时自动诊断，站点行上也可以手动诊断。")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

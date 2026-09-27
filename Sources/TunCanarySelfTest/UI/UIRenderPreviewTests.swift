@@ -28,6 +28,13 @@ enum UIRenderPreviewTests {
                     }
                 }
             },
+            TestCase("弹窗全展开：站点行下的代理诊断", timeout: 60) { t in
+                try prepare(directory)
+                for dark in [false, true] {
+                    let png = await renderFull(dark: dark)
+                    write(png, to: directory, name: "popover-googleWarning-full-\(suffix(dark)).png", t)
+                }
+            },
             TestCase("设置与手动恢复步骤（浅色与深色）", timeout: 120) { t in
                 try prepare(directory)
                 for variant in SettingsVariant.allCases {
@@ -110,6 +117,14 @@ enum UIRenderPreviewTests {
 
     static func prepare(_ directory: URL) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    }
+
+    /// 不限高度的弹窗，用来查看滚动区域下方的内容。
+    @MainActor
+    static func renderFull(dark: Bool) async -> Data? {
+        await PreviewSnapshotRenderer.pngData(
+            of: PopoverRootView(model: AppModel.preview(.googleWarning), maxScrollHeight: nil),
+            width: PopoverMetrics.width, dark: dark)
     }
 
     @MainActor

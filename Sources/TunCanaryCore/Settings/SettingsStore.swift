@@ -9,6 +9,7 @@ public final class SettingsStore: @unchecked Sendable {
     public enum Key {
         public static let intranetURL = "intranetURL"
         public static let tailnetTarget = "tailnet.target"
+        public static let proxyDiagnostics = "proxy.diagnostics"
         public static let expectedDNS = "expectedDNS"
         /// 旧版没有以下三个键：缺失时按旧行为迁移（有预期 DNS 即为 `equals`）。
         public static let disconnectedDNSRule = "dnsRule.vpnDisconnected"
@@ -27,7 +28,7 @@ public final class SettingsStore: @unchecked Sendable {
         public static let sites = "sites"
         /// 站点数据含不合法项或无法解码时，读取前备份的原始数据。
         public static let sitesInvalidBackup = "sites.invalidBackup"
-        public static let all = [intranetURL, tailnetTarget, expectedDNS, disconnectedDNSRule, connectedDNSRule,
+        public static let all = [intranetURL, tailnetTarget, proxyDiagnostics, expectedDNS, disconnectedDNSRule, connectedDNSRule,
                                  residualDNSWarning, proxyClient, manualProxy, canaryHost, checkPages,
                                  egressTargets, notificationsEnabled,
                                  localCheckInterval, lightProbeInterval, sites, sitesInvalidBackup]
@@ -57,6 +58,9 @@ public final class SettingsStore: @unchecked Sendable {
         if let text = defaults.string(forKey: Key.tailnetTarget),
            case .success(let target) = SettingsValidator.validateTailnetTarget(text) {
             settings.tailnetTarget = target
+        }
+        if defaults.object(forKey: Key.proxyDiagnostics) != nil {
+            settings.proxyDiagnosticsEnabled = defaults.bool(forKey: Key.proxyDiagnostics)
         }
         if let list = defaults.stringArray(forKey: Key.expectedDNS),
            case .success(let dns) = SettingsValidator.validateExpectedDNS(list) {
@@ -146,6 +150,7 @@ public final class SettingsStore: @unchecked Sendable {
         } else {
             defaults.removeObject(forKey: Key.tailnetTarget)
         }
+        defaults.set(settings.proxyDiagnosticsEnabled, forKey: Key.proxyDiagnostics)
         defaults.set(DNSList.normalize(settings.expectedDNS), forKey: Key.expectedDNS)
         defaults.set(settings.disconnectedDNSRule.rawValue, forKey: Key.disconnectedDNSRule)
         defaults.set(settings.connectedDNSRule.rawValue, forKey: Key.connectedDNSRule)

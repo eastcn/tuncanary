@@ -29,6 +29,7 @@ enum CoreSuites {
             SettingsTests.suite,
             DiagnosticsTests.suite,
             TailnetTests.suite,
+            ProxyDiagnosisTests.suite,
         ]
     }
 }
