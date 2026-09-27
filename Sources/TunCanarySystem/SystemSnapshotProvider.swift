@@ -12,6 +12,7 @@ public enum SnapshotItem: String, Sendable, CaseIterable {
     case vpnStatusFiles
     case mihomoDNS
     case canary
+    case canaryIPv6
 }
 
 /// 一轮采集的结果与耗时（秒），供诊断与性能核对。
@@ -27,7 +28,7 @@ public struct SnapshotCollectionReport: Sendable {
 ///
 /// - 各项并发采集：阻塞调用都放在 GCD 全局队列上，不占用 Swift 并发的协作线程。
 /// - 只读命令 `netstat -rn -f inet`、`scutil --dns` 每轮各调用一次，超时 3 秒。
-/// - Mihomo DNS 查询在读完 Clash 配置后发起（需要端口），超时 2 秒；系统解析 canary 超时 3 秒。
+/// - Mihomo DNS 查询在读完 Clash 配置后发起（需要端口），超时 2 秒；系统解析 canary 的 A 与 AAAA 查询并行，各超时 3 秒。
 /// - 不抛错：每项失败写进快照对应字段。
 /// - 值类型，可在任意线程并发调用；canary 的“上一次未返回不再发起”状态在副本之间共享。
 public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
@@ -124,6 +125,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
         async let storeTask = Blocking.timed { DynamicStoreReader().read() }
         async let statusTask = Blocking.timed { Self.collectVPNStatusFiles(adapters, paths: config.paths) }
         async let canaryTask = resolveCanary(host: source.canaryHost)
+        async let canaryIPv6Task = resolveCanaryIPv6(host: source.canaryHost)
 
         // Mihomo DNS 依赖配置中的端口，读完配置后立即发起，与其余各项并行。
         let (clashConfig, clashDuration) = await clashTask
@@ -138,6 +140,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
         let (store, storeDuration) = await storeTask
         let (statusFiles, statusDuration) = await statusTask
         let (canaryResult, canaryDuration) = await canaryTask
+        let (canaryIPv6Result, canaryIPv6Duration) = await canaryIPv6Task
 
         let snapshot = LocalSnapshot(
             collectedAt: collectedAt,
@@ -155,6 +158,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
             globalDNS: store.globalDNS,
             mihomoDNS: mihomo,
             canary: canaryResult,
+            canaryIPv6: canaryIPv6Result,
             canaryHost: source.canaryHost
         )
         return SnapshotCollectionReport(
@@ -170,6 +174,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
                 .vpnStatusFiles: statusDuration,
                 .mihomoDNS: mihomoDuration,
                 .canary: canaryDuration,
+                .canaryIPv6: canaryIPv6Duration,
             ]
         )
     }
@@ -254,6 +259,13 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
         guard configuration.resolvesCanary else { return (.notTested, 0) }
         let start = Monotonic.now()
         let result = await canary.resolve(host: host)
+        return (result, Monotonic.now() - start)
+    }
+
+    private func resolveCanaryIPv6(host: String) async -> (CanaryIPv6Result, TimeInterval) {
+        guard configuration.resolvesCanary else { return (.notTested, 0) }
+        let start = Monotonic.now()
+        let result = await canary.resolveIPv6(host: host)
         return (result, Monotonic.now() - start)
     }
 }

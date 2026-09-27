@@ -24,10 +24,25 @@ enum ClashConfigParserTests {
                 t.expectNotContains(dump, "synthetic-secret")
                 t.expectNotContains(dump, "synthetic-password")
                 t.expectNotContains(dump, "203.0.113.9")
-                // 模型只有六个配置字段、fake-ip 过滤名单与模式，外加手动模式的两个标记。
-                t.expectEqual(Mirror(reflecting: config).children.count, 10)
+                // 模型只有六个配置字段、IPv6 开关与 IPv6 fake-ip 网段、fake-ip 过滤名单与模式，外加手动模式的两个标记。
+                t.expectEqual(Mirror(reflecting: config).children.count, 12)
                 t.expect(!config.isManual)
                 t.expectNil(config.coreProcessName)
+            },
+            TestCase("IPv6 开关与 IPv6 fake-ip 网段") { t in
+                let yaml = """
+                dns:
+                  ipv6: true
+                  enhanced-mode: fake-ip
+                  fake-ip-range: 198.18.0.1/16
+                  fake-ip-range6: fdfe:dcba:9876::1/64 # IPv6 网段
+                """
+                let config = ClashConfigParser.parse(vergeYAML: nil, clashVergeYAML: yaml)
+                t.expectEqual(config.dnsIPv6Enabled, true)
+                t.expectEqual(config.fakeIPRange6?.description, "fdfe:dcba:9876::1/64")
+                let missing = ClashConfigParser.parse(vergeYAML: nil, clashVergeYAML: "dns:\n  ipv6: maybe\n  fake-ip-range6: 198.18.0.1/16\n")
+                t.expectNil(missing.dnsIPv6Enabled)
+                t.expectNil(missing.fakeIPRange6)
             },
             TestCase("引号与行尾注释") { t in
                 let yaml = """

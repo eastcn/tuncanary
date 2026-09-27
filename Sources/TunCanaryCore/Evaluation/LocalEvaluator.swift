@@ -31,6 +31,11 @@ public struct LocalEvaluator: Sendable {
             makeDNSCard(snapshot, settings: settings, tun: tun, vpn: vpn, state: state, canary: canary),
             makeMihomoCard(snapshot, tun: tun, source: source),
         ]
+        // AAAA 结果只作证据：不改变严重程度，不产生故障键。
+        if let ipv6 = ipv6Evidence(snapshot, tun: tun),
+           let index = cards.firstIndex(where: { $0.kind == .primaryDNS }) {
+            cards[index].evidence.append(ipv6)
+        }
 
         // 宽限期内不判定持续异常：黄、红降为灰，不产生故障键。
         if inGracePeriod {
@@ -290,6 +295,32 @@ public struct LocalEvaluator: Sendable {
                 return CanaryAnalysis(realAddresses: nil,
                                       evidence: "系统解析 \(host) 返回真实地址 \(realList)，但 fake-ip 过滤名单含 \(entries.prefix(3).joined(separator: "、")) 等外部列表，无法确认是否绕过")
             }
+        }
+    }
+
+    /// AAAA 查询的证据文本。只在 TUN 以 fake-ip 模式运行时给出；未查询时为 nil。
+    func ipv6Evidence(_ snapshot: LocalSnapshot, tun: TunAnalysis) -> String? {
+        guard tun.state.isRunning, let config = tun.config, config.isFakeIPMode else { return nil }
+        let host = snapshot.canaryHost
+        switch snapshot.canaryIPv6 {
+        case .notTested:
+            return nil
+        case .failed(let reason):
+            return "系统解析 \(host) 的 AAAA 记录失败：\(reason)"
+        case .noRecord:
+            return "系统解析 \(host) 无 AAAA 记录"
+        case .resolved(let addresses):
+            let list = addresses.map(\.description).joined(separator: ", ")
+            let range6 = config.fakeIPRange6
+            if let range6, addresses.allSatisfy(range6.contains) {
+                return "系统解析 \(host) 的 AAAA 返回 fake-ip \(list)"
+            }
+            let real = addresses.filter { $0.isGlobalUnicast && !(range6?.contains($0) ?? false) }
+            guard !real.isEmpty else {
+                return "系统解析 \(host) 的 AAAA 返回 \(list)"
+            }
+            let realList = real.map(\.description).joined(separator: ", ")
+            return "系统解析 \(host) 的 AAAA 返回真实 IPv6 地址 \(realList)（仅供参考：IPv6 流量可能未经过代理）"
         }
     }
 

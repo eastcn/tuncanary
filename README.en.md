@@ -18,7 +18,7 @@ TunCanary periodically resolves a canary domain with the system resolver. If it 
 | --- | --- |
 | Proxy TUN | TUN enabled in the proxy config, an UP utun interface inside the fake-ip range, and the core process running |
 | VPN | VPN processes, tunnels and routes, identified by adapter configs you write; unrecognized tunnels are reported. Conflicting evidence is shown as "unconfirmed" |
-| Primary DNS | Whether the canary resolves to a fake-ip address; optionally, whether the network service's saved DNS matches your rules |
+| Primary DNS | Whether the canary resolves to a fake-ip address; optionally, whether the network service's saved DNS matches your rules. The canary's AAAA result is shown as evidence only and never raises an alert |
 | Proxy DNS | Whether the proxy's local DNS port answers |
 
 It also probes a list of sites in groups and alerts after two consecutive failed rounds.

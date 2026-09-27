@@ -169,6 +169,15 @@ public enum CanaryResult: Sendable, Equatable {
     case resolved([IPv4])
 }
 
+/// 通过系统解析器查询 canary 域名 AAAA 记录的结果。只作证据，不参与判定。
+public enum CanaryIPv6Result: Sendable, Equatable {
+    case notTested
+    case failed(reason: String)
+    /// 没有 AAAA 记录（`EAI_NONAME`/`EAI_NODATA`），常见且正常。
+    case noRecord
+    case resolved([IPv6])
+}
+
 /// 一轮本机状态采集结果。每个字段都能表示“未采集”或“失败”。
 public struct LocalSnapshot: Sendable, Equatable {
     public var collectedAt: Date
@@ -188,6 +197,8 @@ public struct LocalSnapshot: Sendable, Equatable {
     public var globalDNS: Collected<[String]>
     public var mihomoDNS: MihomoDNSProbeResult
     public var canary: CanaryResult
+    /// 同一域名的 AAAA 查询结果。
+    public var canaryIPv6: CanaryIPv6Result
     /// 本轮系统解析 canary 查询的域名。
     public var canaryHost: String
 
@@ -204,6 +215,7 @@ public struct LocalSnapshot: Sendable, Equatable {
         globalDNS: Collected<[String]> = .notCollected,
         mihomoDNS: MihomoDNSProbeResult = .notCollected,
         canary: CanaryResult = .notTested,
+        canaryIPv6: CanaryIPv6Result = .notTested,
         canaryHost: String = PulseConstants.canaryHost
     ) {
         self.collectedAt = collectedAt
@@ -218,6 +230,7 @@ public struct LocalSnapshot: Sendable, Equatable {
         self.globalDNS = globalDNS.map { DNSList.normalize($0) }
         self.mihomoDNS = mihomoDNS
         self.canary = canary
+        self.canaryIPv6 = canaryIPv6
         self.canaryHost = canaryHost
     }
 

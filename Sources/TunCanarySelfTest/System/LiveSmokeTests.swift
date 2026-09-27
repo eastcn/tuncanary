@@ -177,5 +177,16 @@ enum LiveSmokeTests {
         case .notTested:
             log("系统解析：未执行")
         }
+
+        switch snapshot.canaryIPv6 {
+        case .resolved(let addresses):
+            log("系统解析 \(PulseConstants.canaryHost) AAAA：\(addresses.map(\.description).joined(separator: ", "))")
+        case .noRecord:
+            log("系统解析 \(PulseConstants.canaryHost) AAAA：无记录")
+        case .failed(let reason):
+            log("系统解析 \(PulseConstants.canaryHost) AAAA：失败（\(reason)）")
+        case .notTested:
+            log("系统解析 AAAA：未执行")
+        }
     }
 }

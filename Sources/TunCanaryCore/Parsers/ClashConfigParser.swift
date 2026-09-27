@@ -15,6 +15,10 @@ public struct ClashConfig: Sendable, Equatable {
     public var dnsEnhancedMode: String?
     /// `dns.fake-ip-range`，例如 `198.18.0.1/16`。
     public var fakeIPRange: IPv4CIDR?
+    /// `dns.ipv6`：代理 DNS 是否应答 AAAA。
+    public var dnsIPv6Enabled: Bool?
+    /// `dns.fake-ip-range6`，例如 `fdfe:dcba:9876::1/64`。
+    public var fakeIPRange6: IPv6CIDR?
     /// `dns.fake-ip-filter`：这些域名不分配 fake-ip（白名单模式下相反）。未配置时为 nil。
     public var fakeIPFilter: [String]?
     /// `dns.fake-ip-filter-mode`：`blacklist`（默认）或 `whitelist`。
@@ -69,6 +73,7 @@ public enum ClashConfigParser {
     static let vergeKeys: Set<String> = ["enable_tun_mode"]
     static let clashKeys: Set<String> = [
         "tun.enable", "tun.device", "dns.listen", "dns.enhanced-mode", "dns.fake-ip-range", "dns.fake-ip-filter-mode",
+        "dns.ipv6", "dns.fake-ip-range6",
     ]
 
     /// 解析两份配置文本；任一为 nil 时对应字段保持 nil。
@@ -85,6 +90,8 @@ public enum ClashConfigParser {
             config.dnsListenPort = values["dns.listen"].flatMap(parsePort)
             config.dnsEnhancedMode = values["dns.enhanced-mode"].flatMap { $0.isEmpty ? nil : $0 }
             config.fakeIPRange = values["dns.fake-ip-range"].flatMap { IPv4CIDR($0) }
+            config.dnsIPv6Enabled = values["dns.ipv6"].flatMap(parseBool)
+            config.fakeIPRange6 = values["dns.fake-ip-range6"].flatMap { IPv6CIDR($0) }
             config.fakeIPFilterMode = values["dns.fake-ip-filter-mode"].flatMap { $0.isEmpty ? nil : $0.lowercased() }
             config.fakeIPFilter = scanList(clash, top: "dns", key: "fake-ip-filter")
         }

@@ -107,6 +107,33 @@ enum IPv4Tests {
                 t.expectNil(IPv4CIDR(netstatDestination: "xx:xx:xx:xx:xx:xx"))
                 t.expectNil(IPv4CIDR(netstatDestination: "10.0/40"))
             },
+            TestCase("IPv6：解析、压缩写法、全局单播与网段") { t in
+                let ip = try t.require(IPv6("2001:0db8:0000:0000:0000:0000:0000:0001"))
+                t.expectEqual(ip.description, "2001:db8::1")
+                t.expect(ip.isGlobalUnicast)
+                t.expect(!IPv6("fe80::1")!.isGlobalUnicast)
+                t.expect(!IPv6("fdfe:dcba:9876::1")!.isGlobalUnicast)
+                t.expect(!IPv6("::1")!.isGlobalUnicast)
+                t.expect(IPv6("::ffff:198.18.0.10")!.isIPv4Mapped)
+                t.expect(!IPv6("::ffff:198.18.0.10")!.isGlobalUnicast)
+                t.expect(!IPv6("2001:db8::ffff:0:1")!.isIPv4Mapped)
+                t.expect(!IPv6("::1")!.isIPv4Mapped)
+                t.expectNil(IPv6("fe80::1%en0"))
+                t.expectNil(IPv6("198.18.0.1"))
+                t.expectNil(IPv6("2001:db8::/32"))
+                t.expectNil(IPv6(bytes: [0, 1]))
+
+                let range = try t.require(IPv6CIDR("fdfe:dcba:9876::1/64"))
+                t.expect(range.contains(IPv6("fdfe:dcba:9876::abcd")!))
+                t.expect(!range.contains(IPv6("fdfe:dcba:9877::1")!))
+                let odd = try t.require(IPv6CIDR("2001:db8::/33"))
+                t.expect(odd.contains(IPv6("2001:db8:7fff::1")!))
+                t.expect(!odd.contains(IPv6("2001:db8:8000::1")!))
+                t.expect(IPv6CIDR("::/0")!.contains(IPv6("2001:db8::1")!))
+                t.expectNil(IPv6CIDR("2001:db8::/129"))
+                t.expectNil(IPv6CIDR("2001:db8::"))
+                t.expectNil(IPv6CIDR("198.18.0.1/16"))
+            },
             TestCase("Tailscale 网段与脱敏判定") { t in
                 t.expect(IPv4CIDR.tailscale.contains(IPv4("100.64.0.2")!))
                 t.expect(IPv4CIDR.tailscale.contains(IPv4("100.127.255.254")!))

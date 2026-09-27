@@ -64,6 +64,47 @@ enum LocalEvaluatorTests {
                 snapshot.canary = .failed(reason: "超时")
                 t.expectEqual(F.evaluate(snapshot).severity, .ok)
             },
+            TestCase("AAAA 只作证据：不改变严重程度、不产生故障") { t in
+                let base = try F.snapshot(.a)
+                let baseline = F.evaluate(base)
+                let baseDNS = try t.require(baseline.card(.primaryDNS))
+                t.expect(!baseDNS.evidence.contains { $0.contains("AAAA") }, "未查询时没有 AAAA 证据")
+
+                func dnsCard(_ result: CanaryIPv6Result, range6: String? = nil) throws -> (StatusCard, LocalAssessment) {
+                    var snapshot = base
+                    snapshot.canaryIPv6 = result
+                    if let range6 {
+                        var config = try t.require(snapshot.clashConfig.value)
+                        config.fakeIPRange6 = IPv6CIDR(range6)
+                        snapshot.clashConfig = .collected(config)
+                    }
+                    let assessment = F.evaluate(snapshot)
+                    return (try t.require(assessment.card(.primaryDNS)), assessment)
+                }
+                let cases: [(CanaryIPv6Result, String?, String)] = [
+                    (.noRecord, nil, "系统解析 www.google.com 无 AAAA 记录"),
+                    (.failed(reason: "超时"), nil, "系统解析 www.google.com 的 AAAA 记录失败：超时"),
+                    (.resolved([IPv6("fdfe:dcba:9876::1a")!]), "fdfe:dcba:9876::1/64",
+                     "系统解析 www.google.com 的 AAAA 返回 fake-ip fdfe:dcba:9876::1a"),
+                    (.resolved([IPv6("2001:db8::1")!]), nil,
+                     "系统解析 www.google.com 的 AAAA 返回真实 IPv6 地址 2001:db8::1（仅供参考：IPv6 流量可能未经过代理）"),
+                    (.resolved([IPv6("fd00::1")!]), nil, "系统解析 www.google.com 的 AAAA 返回 fd00::1"),
+                ]
+                for (result, range6, expected) in cases {
+                    let (dns, assessment) = try dnsCard(result, range6: range6)
+                    t.expect(dns.evidence.contains(expected), "\(result)：\(dns.evidence)")
+                    t.expectEqual(dns.severity, baseDNS.severity)
+                    t.expectEqual(assessment.severity, baseline.severity)
+                    t.expectEqual(assessment.faults.map(\.key), baseline.faults.map(\.key))
+                }
+
+                // TUN 关闭时不给 AAAA 证据。
+                var off = try F.snapshot(.a)
+                off.clashConfig = .collected(F.clashConfig(tunOn: false))
+                off.canaryIPv6 = .resolved([IPv6("2001:db8::1")!])
+                let offDNS = try t.require(F.evaluate(off).card(.primaryDNS))
+                t.expect(!offDNS.evidence.contains { $0.contains("AAAA") })
+            },
             TestCase("表6 黄：TUN 关闭，但 DNS 仍含 119.29.29.29") { t in
                 var snapshot = try F.snapshot(.a)
                 snapshot.clashConfig = .collected(F.clashConfig(tunOn: false))

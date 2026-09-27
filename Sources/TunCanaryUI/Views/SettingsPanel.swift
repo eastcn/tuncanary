@@ -152,7 +152,7 @@ struct ProxyClientSection: View {
                 }
                 .padding(.leading, 14)
             } else {
-                Text("读取 Clash Verge Rev 的配置文件，只取 TUN 开关、DNS 端口和 fake-ip 网段，不读取 secret 和节点。")
+                Text("读取 Clash Verge Rev 的配置文件，只取 TUN 开关、DNS 端口、IPv6 开关和 fake-ip 网段，不读取 secret 和节点。")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
