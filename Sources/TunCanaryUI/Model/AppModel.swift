@@ -14,9 +14,9 @@ public final class AppModel: ObservableObject {
     @Published public var local: LocalAssessment?
     /// 各站点最近 5 次结果（只在内存中）。
     @Published public var siteHistory: SiteHistory
-    /// 内网站点探测决策。
+    /// VPN 站点探测决策。
     @Published public var intranetDecision: IntranetProbeDecision
-    /// 家庭子网探测决策。
+    /// Tailnet 子网探测决策。
     @Published public var tailnetDecision: TailnetProbeDecision
     /// 最近一次完成检查的时间。
     @Published public var lastCheckedAt: Date?
@@ -125,7 +125,7 @@ public final class AppModel: ObservableObject {
 
     // MARK: 写入检查结果
 
-    /// 一轮检查完成后更新：重算总体状态，记录完成时间。站点历史和内网决策由调用方另行写入。
+    /// 一轮检查完成后更新：重算总体状态，记录完成时间。站点历史和 VPN 站点决策由调用方另行写入。
     public func apply(local: LocalAssessment?, connectivityFaults: [ConnectivityFault], checkedAt: Date) {
         self.local = local
         overall = OverallAssessment(local: local, connectivityFaults: connectivityFaults)
@@ -162,7 +162,7 @@ public final class AppModel: ObservableObject {
                             proxy: settings.proxySource)
     }
 
-    /// 脱敏器：去掉主目录和内网站点 URL。
+    /// 脱敏器：去掉主目录和 VPN 站点 URL。
     public var redactor: Redactor {
         Redactor(homeDirectory: NSHomeDirectory(), intranetURL: settings.intranetURL,
                  siteURLs: settings.sites.map(\.url))
@@ -242,7 +242,7 @@ public final class AppModel: ObservableObject {
         settingsValidation.isValid && settingsDraft.hasChanges(comparedTo: settings)
     }
 
-    /// 保存设置：校验通过后更新 `settings`、按新设置重算内网决策，并调用注入的保存动作。
+    /// 保存设置：校验通过后更新 `settings`、按新设置重算 VPN 站点决策，并调用注入的保存动作。
     @discardableResult
     public func saveSettings() -> Bool {
         guard let validated = settingsValidation.settings else { return false }
@@ -313,7 +313,7 @@ public final class AppModel: ObservableObject {
 
     // MARK: 诊断摘要
 
-    /// 由当前状态构造诊断摘要。内网站点只标注已配置与否，正文在渲染时整体脱敏。
+    /// 由当前状态构造诊断摘要。VPN 站点只标注已配置与否，正文在渲染时整体脱敏。
     public func diagnosticSummary(generatedAt: Date, appVersion: String, osVersion: String) -> DiagnosticSummary {
         var entries = DiagnosticSummary.siteEntries(history: siteHistory, sites: settings.enabledSites)
         if let site = intranetDecision.site {

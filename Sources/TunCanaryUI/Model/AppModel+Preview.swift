@@ -15,9 +15,9 @@ public enum PreviewScenario: String, Sendable, CaseIterable {
     case checking
     /// 宽限期：网络切换中。
     case gracePeriod
-    /// 内网站点未配置。
+    /// VPN 站点未配置。
     case intranetNotConfigured
-    /// VPN 已连接（连接期），内网站点参与探测。
+    /// VPN 已连接（连接期），VPN 站点参与探测。
     case vpnConnected
     /// VPN 已连接，连接期由代理接管，DNS 守护进程已安装并写入成功。
     case proxyTakeover
@@ -30,7 +30,7 @@ public enum PreviewScenario: String, Sendable, CaseIterable {
         case .firstLaunch: return "首次启动"
         case .checking: return "检查进行中"
         case .gracePeriod: return "宽限期（切换中）"
-        case .intranetNotConfigured: return "内网未配置"
+        case .intranetNotConfigured: return "VPN 站点未配置"
         case .vpnConnected: return "VPN 已连接"
         case .proxyTakeover: return "连接期由代理接管"
         }
@@ -225,7 +225,7 @@ enum PreviewData {
                            "隧道路由 12 条",
                            "VPN DNS（状态文件）：10.20.0.53",
                        ]),
-            dnsCard(.ok, "DNS 为 VPN 下发的 DNS（连接期状态）", hint: "连接期状态；启用内网站点探测",
+            dnsCard(.ok, "DNS 为 VPN 下发的 DNS（连接期状态）", hint: "连接期状态；启用 VPN 站点探测",
                     evidence: ["保存值：10.20.0.53", "VPN DNS：10.20.0.53"]),
             mihomoCard,
         ], vpn: .connected)
@@ -236,13 +236,13 @@ enum PreviewData {
         let written = DNSGuardEvent(date: now.addingTimeInterval(-340), phase: .connected, outcome: .written)
         let compliant = DNSGuardEvent(date: now.addingTimeInterval(-25), phase: .connected, outcome: .compliant)
         var dns = dnsCard(.ok, "VPN 已连接，由代理接管：DNS 为 119.29.29.29，符合预期",
-                          hint: "连接期由代理接管；启用内网站点探测，内网站点失败时先检查代理能否解析内网域名",
+                          hint: "连接期由代理接管；启用 VPN 站点探测，VPN 站点失败时先检查代理能否解析 VPN 域名",
                           evidence: ["保存值：119.29.29.29", "系统解析 www.google.com 返回 fake-ip 198.18.0.26"])
         dns.dnsGuard = DNSGuardSummary(
             installed: true, lastRun: compliant, lastWrite: written,
             recentEvents: [
                 DNSGuardEvent(date: now.addingTimeInterval(-370), phase: .connected, outcome: .skipped,
-                              reason: "代理无法解析内网探针"),
+                              reason: "代理无法解析 VPN 探针"),
                 written, compliant,
             ])
         var local = connectedLocal()

@@ -126,24 +126,24 @@ enum DNSGuardDaemonTests {
                 let expired = DNSGuardState(consecutiveFailures: 3, backoffUntil: now.addingTimeInterval(-1))
                 t.expectEqual(decide(sample(), state: expired), plan([]))
             },
-            TestCase("判定：连接期接管按内网探针结果决定") { t in
+            TestCase("判定：连接期接管按 VPN 探针结果决定") { t in
                 let on = config(takeover: true)
                 let connected = sample(vpn: .connected, saved: ["10.9.0.53"])
                 t.expectEqual(decide(connected, config: on), .needsProbe(host: "probe.corp.example", port: 1053))
                 t.expectEqual(decide(connected, config: on, probe: .answered([IPv4("10.20.0.8")!])),
                               plan(["10.9.0.53"], phase: .connected))
                 t.expectEqual(decide(connected, config: on, probe: .answered([IPv4("198.18.0.40")!])),
-                              .skip(phase: .connected, reason: "代理无法解析内网探针（返回 fake-ip）"))
+                              .skip(phase: .connected, reason: "代理无法解析 VPN 探针（返回 fake-ip）"))
                 t.expectEqual(decide(connected, config: on, probe: .answered([])),
-                              .skip(phase: .connected, reason: "代理无法解析内网探针（无记录）"))
+                              .skip(phase: .connected, reason: "代理无法解析 VPN 探针（无记录）"))
                 t.expectEqual(decide(connected, config: on, probe: .noResponse),
-                              .skip(phase: .connected, reason: "代理无法解析内网探针（超时或无响应）"))
+                              .skip(phase: .connected, reason: "代理无法解析 VPN 探针（超时或无响应）"))
                 t.expectEqual(decide(connected, config: on, probe: .failed("地址无效")),
-                              .skip(phase: .connected, reason: "代理无法解析内网探针（地址无效）"))
+                              .skip(phase: .connected, reason: "代理无法解析 VPN 探针（地址无效）"))
                 var noPort = connected
                 noPort.proxyDNSPort = nil
                 t.expectEqual(decide(noPort, config: on),
-                              .skip(phase: .connected, reason: "代理配置缺少 DNS 端口，无法检查内网探针"))
+                              .skip(phase: .connected, reason: "代理配置缺少 DNS 端口，无法检查 VPN 探针"))
                 t.expectEqual(decide(sample(vpn: .connected, saved: target), config: on), .compliant(phase: .connected))
             },
             TestCase("判定：10 分钟内连接期写入达到上限时停用接管") { t in
@@ -418,7 +418,7 @@ enum DNSGuardDaemonTests {
                 t.expectEqual(report.event, DNSGuardEvent(date: now, phase: .connected, outcome: .written))
                 t.expectEqual(stubs.events.map(\.outcome), [.written], "中间的探针失败不记事件")
             },
-            TestCase("运行：内网探针失败时不写入") { t in
+            TestCase("运行：VPN 探针失败时不写入") { t in
                 let stubs = Stubs()
                 stubs.samples = [sample(vpn: .connected, saved: ["10.9.0.53"])]
                 stubs.probeResult = .answered([IPv4("198.18.0.40")!])
@@ -426,7 +426,7 @@ enum DNSGuardDaemonTests {
                 let report = await runner(stubs, config: config(takeover: true), sleeps: sleeps).run()
                 t.expectEqual(stubs.probes, 4, "首次查询加 3 次重查")
                 t.expectEqual(sleeps.values, [3, 5, 5, 5])
-                t.expectEqual(report.event.reason, "代理无法解析内网探针（返回 fake-ip）")
+                t.expectEqual(report.event.reason, "代理无法解析 VPN 探针（返回 fake-ip）")
                 t.expectEqual(stubs.writes, [])
                 t.expectNotContains(stubs.events.map(\.text).joined(), "probe.corp.example")
             },

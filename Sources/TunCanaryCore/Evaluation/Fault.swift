@@ -37,7 +37,7 @@ public struct FaultKey: RawRepresentable, Hashable, Comparable, Sendable, Codabl
     public static let mihomoNoResponse: FaultKey = "mihomo.noResponse"
     /// Tailscale 隧道存在，但 MagicDNS 地址或 tailnet 网段的路由没有指向它（红）。
     public static let tailnetRoute: FaultKey = "tailnet.route"
-    /// 家庭子网目标没有经 Tailscale 路由，也不在当前网络的网段内（红）。
+    /// Tailnet 子网目标没有经 Tailscale 路由，也不在当前网络的网段内（红）。
     public static let tailnetSubnetRoute: FaultKey = "tailnet.subnetRoute"
     /// MagicDNS 无响应，或者系统解析 MagicDNS 名称出错（黄）。
     public static let tailnetMagicDNS: FaultKey = "tailnet.magicDNS"

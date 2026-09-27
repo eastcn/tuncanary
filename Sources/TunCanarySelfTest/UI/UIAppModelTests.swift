@@ -159,11 +159,11 @@ enum UIAppModelTests {
         let invalid = draft.validate()
         t.expect(!invalid.isValid)
         t.expectNil(invalid.settings)
-        t.expectEqual(invalid.intranetURLError, "内网站点 URL 必须是 http 或 https")
+        t.expectEqual(invalid.intranetURLError, "VPN 站点 URL 必须是 http 或 https")
         t.expectEqual(invalid.expectedDNSError, "“119.29.29.295”不是有效的 IPv4 地址")
 
         draft.intranetURL = "https://"
-        t.expectEqual(draft.validate().intranetURLError, "内网站点 URL 缺少主机名")
+        t.expectEqual(draft.validate().intranetURLError, "VPN 站点 URL 缺少主机名")
         draft.expectedDNS = "  "
         t.expectEqual(draft.validate().expectedDNSError, "预期 DNS 至少填写一个 IPv4 地址")
 
@@ -353,7 +353,7 @@ enum UIAppModelTests {
         draft.sites[1] = SettingsDraft.SiteDraft(site: SiteCatalog.google)
         draft.sites[1].group = SiteGroup(rawValue: " 东亚 ")
         t.expectEqual(draft.validate().settings?.sites[1].group, SiteGroup(rawValue: "东亚"))
-        draft.sites[1].group = SiteGroup(rawValue: "内网站点")
+        draft.sites[1].group = SiteGroup(rawValue: "VPN 站点")
         t.expect(draft.validate().siteErrors[1]?.group != nil)
         draft.sites = Array(repeating: SettingsDraft.SiteDraft(site: SiteCatalog.baidu), count: 21)
         t.expect(draft.validate().siteCountError != nil)
@@ -441,7 +441,7 @@ enum UIAppModelTests {
         let text = log.copied.first ?? ""
         t.expectContains(text, "TunCanary 诊断摘要")
         t.expectContains(text, "总体状态：正常")
-        t.expectContains(text, "内网站点：已配置")
+        t.expectContains(text, "VPN 站点：已配置")
         t.expectContains(text, "10.x.x.x")
         t.expectNotContains(text, "intranet.corp.example")
         t.expectNotContains(text, "10.20.0.53")
@@ -461,7 +461,7 @@ enum UIAppModelTests {
         t.expectEqual(log.copied.last, "networksetup -getdnsservers Wi-Fi")
         t.expectEqual(model.copiedItem, .command)
 
-        // 诊断摘要的结构：公开站点 + 已探测的内网。
+        // 诊断摘要的结构：公开站点 + 已探测的 VPN 站点。
         let summary = model.diagnosticSummary(generatedAt: Date(timeIntervalSince1970: 0), appVersion: "1.0", osVersion: "13.0")
         t.expectEqual(summary.sites.count, SiteCatalog.defaultSites.count + 1)
         t.expect(summary.intranetConfigured)

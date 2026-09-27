@@ -46,7 +46,7 @@ enum LiveSmokeTests {
                 }
                 if case .notTested = snapshot.canary { t.fail("系统解析 canary 应已执行") }
 
-                // 评估并打印（不断言颜色）。设置 TUNCANARY_LIVE_TAILNET_TARGET=地址:端口 时按该家庭子网目标评估。
+                // 评估并打印（不断言颜色）。设置 TUNCANARY_LIVE_TAILNET_TARGET=地址:端口 时按该 Tailnet 子网目标评估。
                 var settings = AppSettings()
                 settings.tailnetTarget = ProcessInfo.processInfo.environment["TUNCANARY_LIVE_TAILNET_TARGET"]
                     .flatMap(TailnetTarget.init)
@@ -61,11 +61,11 @@ enum LiveSmokeTests {
                 }
                 for note in assessment.diagnosticNotes { log("诊断：\(note)") }
                 if settings.tailnetTarget != nil {
-                    log("家庭子网：\(assessment.tailnetDecision.skippedText ?? "探测")")
+                    log("Tailnet 子网：\(assessment.tailnetDecision.skippedText ?? "探测")")
                     if let site = assessment.tailnetDecision.site {
                         let result = await URLSessionSiteProber().probe(site: site, attempts: 1,
                                                                         timeout: PulseConstants.probeTimeout)
-                        log("家庭子网探测：\(result.summaryText)\(result.attempts.first?.detail.map { "（\($0)）" } ?? "")")
+                        log("Tailnet 子网探测：\(result.summaryText)\(result.attempts.first?.detail.map { "（\($0)）" } ?? "")")
                     }
                 }
             },

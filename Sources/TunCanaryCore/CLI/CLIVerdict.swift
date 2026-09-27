@@ -6,7 +6,7 @@ import Foundation
 /// - 本机结果为黄或红时，调用方等待 10 秒再采一次；两次一致（严重程度与故障键相同）才报告，否则判为未确认。
 /// - 轻测中每个关键站点最多请求 2 次，两次都失败才算本次失败；失败站点按应用内告警规则映射，
 ///   因此“关键站点失败”为 1，“某分组关键站点全部失败”（百度；Google 与 Claude）为 2。
-///   内网站点与应用一致按黄处理（见 docs/ARCHITECTURE.md）。
+///   VPN 站点与应用一致按黄处理（见 docs/ARCHITECTURE.md）。
 /// - 完整检测按每站 3 次请求的汇总类别判定失败，与应用的完整检测一致。
 /// - 整体超时时保留已完成的本机评估与站点结果；未完成的站点标为“未完成（超时）”，不计为失败。
 public struct CLIVerdict: Sendable, Equatable {
@@ -303,7 +303,7 @@ public struct CLIVerdict: Sendable, Equatable {
         } else if let pending = pendingIntranet.first {
             segments.append("\(pending.name) \(incomplete)")
         } else if intranet != .notConfigured, let skipped = intranetSkipped {
-            segments.append("内网站点 \(skipped)")
+            segments.append("VPN 站点 \(skipped)")
         }
         if let tailnetResult = siteResults.first(where: { $0.site.group == .tailnet }), tailnet.site != nil {
             segments.append("\(tailnetResult.site.name) \(tailnetResult.summaryText)")
@@ -394,7 +394,7 @@ public struct CLIVerdict: Sendable, Equatable {
             var status: String
         }
 
-        /// 家庭子网：`status` 取值见 `TailnetProbeDecision.statusValue`。不含目标地址。
+        /// Tailnet 子网：`status` 取值见 `TailnetProbeDecision.statusValue`。不含目标地址。
         struct Tailnet: Encodable {
             var configured: Bool
             var status: String
@@ -432,7 +432,7 @@ public struct CLIVerdict: Sendable, Equatable {
         var faults: [FaultItem]
     }
 
-    /// JSON 输出（键排序、缩进），全部字符串经过 `redactor`。不含内网站点 URL。
+    /// JSON 输出（键排序、缩进），全部字符串经过 `redactor`。不含 VPN 站点 URL。
     public func renderJSON(redactor: Redactor, timeZone: TimeZone = .current) -> String {
         let r = redactor.redact
         let intranetStatus: String

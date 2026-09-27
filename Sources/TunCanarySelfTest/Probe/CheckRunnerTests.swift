@@ -279,7 +279,7 @@ enum CheckRunnerTests {
                 t.expectEqual(verdict.exitCode, .ok)
                 t.expectEqual(prober.callCount(for: "claude"), 1, "4xx 不应触发第二次请求")
             },
-            TestCase("内网探测决策：已连接时参与轻测") { t in
+            TestCase("VPN 站点探测决策：已连接时参与轻测") { t in
                 let snapshot = try F.snapshot(.b)
                 let local = F.evaluate(snapshot)
                 t.expectEqual(local.vpnState, .connected, "fixture B 场景应为已连接")
@@ -290,7 +290,7 @@ enum CheckRunnerTests {
                 t.expect(verdict.intranet.site != nil, "已连接且已配置时应参与探测")
                 t.expect(prober.probedSiteIDs.contains(SiteCatalog.intranetID))
             },
-            TestCase("内网探测决策：未连接时不探测") { t in
+            TestCase("VPN 站点探测决策：未连接时不探测") { t in
                 let snapshot = try F.snapshot(.a)
                 let local = F.evaluate(snapshot)
                 t.expectEqual(local.vpnState, .disconnected, "fixture A 场景应为已断开")
@@ -301,10 +301,10 @@ enum CheckRunnerTests {
                 t.expectEqual(verdict.intranet, .vpnDisconnected)
                 t.expect(!prober.probedSiteIDs.contains(SiteCatalog.intranetID))
             },
-            TestCase("内网探测决策：未配置时未验证") { t in
+            TestCase("VPN 站点探测决策：未配置时未验证") { t in
                 let snapshot = try F.snapshot(.b)
                 let prober = ScriptedProber(scripts: [:])
-                let (runner, _) = runner(snapshots: [snapshot], prober: prober) // 默认设置无内网 URL
+                let (runner, _) = runner(snapshots: [snapshot], prober: prober) // 默认设置无 VPN 站点 URL
                 let verdict = await runner.run(options: CheckOptions())
                 t.expectEqual(verdict.intranet, .notConfigured)
                 t.expect(!prober.probedSiteIDs.contains(SiteCatalog.intranetID))

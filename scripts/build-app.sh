@@ -89,7 +89,7 @@ cat > "$stage/Contents/Info.plist" <<EOF
     <key>CFBundleVersion</key><string>1</string>
     <key>LSMinimumSystemVersion</key><string>13.0</string>
     <key>LSUIElement</key><true/>
-    <key>NSLocalNetworkUsageDescription</key><string>TunCanary 需要访问本地网络，才能检测家庭子网目标是否可达。</string>
+    <key>NSLocalNetworkUsageDescription</key><string>TunCanary 需要访问本地网络，才能检测Tailnet 子网目标是否可达。</string>
     <key>NSHighResolutionCapable</key><true/>
 </dict>
 </plist>

@@ -95,4 +95,4 @@ ps -axo pid,user,comm | grep -i 'vpn'
 
 选择“由代理接管”时，连接期不看 `statusFile.dns`，按断开时的规则检查保存的 DNS。这时保存值属于 `statusFile.dns`，会在证据中标为“VPN 下发的 DNS”。
 
-“内网站点”只在 VPN 状态为已连接时探测。
+“VPN 站点”只在 VPN 状态为已连接时探测。

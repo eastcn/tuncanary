@@ -54,7 +54,7 @@ enum FixtureTests {
                 let dns = try t.require(result.card(.primaryDNS))
                 t.expectEqual(dns.severity, .ok)
                 t.expectEqual(dns.conclusion, "DNS 为 VPN 下发的 DNS（连接期状态）")
-                t.expectEqual(dns.hint, "连接期状态；启用内网站点探测")
+                t.expectEqual(dns.hint, "连接期状态；启用 VPN 站点探测")
                 let vpn = try t.require(result.card(.vpn))
                 t.expectEqual(vpn.title, "Example VPN")
                 t.expectEqual(vpn.conclusion, "已连接")

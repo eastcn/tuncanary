@@ -1,7 +1,7 @@
 import SwiftUI
 import TunCanaryCore
 
-/// 设置页：检测频率、公开站点、内网站点、家庭子网、DNS 与系统选项。
+/// 设置页：检测频率、公开站点、VPN 站点、Tailnet 子网、DNS 与系统选项。
 struct SettingsPanel: View {
     @ObservedObject var model: AppModel
     let maxScrollHeight: CGFloat?
@@ -14,16 +14,16 @@ struct SettingsPanel: View {
             BoundedScroll(maxHeight: maxScrollHeight) {
                 VStack(alignment: .leading, spacing: 18) {
                     SettingsTextField(
-                        title: "内网站点 URL",
+                        title: "VPN 站点 URL",
                         placeholder: "https://intranet.example.com/",
                         text: $model.settingsDraft.intranetURL,
-                        caption: "必须是 http 或 https，且含主机名。留空表示未配置，内网站点显示“未验证”。诊断摘要只显示“已配置”或“未配置”。",
+                        caption: "必须是 http 或 https，且含主机名。留空表示未配置，VPN 站点显示“未验证”。诊断摘要只显示“已配置”或“未配置”。",
                         error: validation.intranetURLError)
                     SettingsTextField(
-                        title: "家庭子网目标",
+                        title: "Tailnet 子网目标",
                         placeholder: "192.168.1.10:443",
                         text: $model.settingsDraft.tailnetTarget,
-                        caption: "家庭局域网里一台常开设备的 IPv4 地址和 TCP 端口。经 Tailscale 子网路由访问时做连接探测，连续三轮失败判为故障；端口拒绝连接也算可达。当前网络与家庭子网网段相同时不探测。留空表示未配置。",
+                        caption: "Tailnet 子网里一台常开设备的 IPv4 地址和 TCP 端口。经 Tailscale 子网路由访问时做连接探测，连续三轮失败判为故障；端口拒绝连接也算可达。当前网络与 Tailnet 子网网段相同时不探测。留空表示未配置。",
                         error: validation.tailnetTargetError)
                     ProxyClientSection(model: model, validation: validation)
                     DNSRulesSection(model: model, error: validation.expectedDNSError)
@@ -202,7 +202,7 @@ struct DNSRulesSection: View {
             }
             .font(.system(size: 12.5))
             if model.settingsDraft.connectedDNSRule == .proxyTakeover {
-                Text("VPN 连接、TUN 运行时，也按上面的规则检查保存的 DNS，并要求系统解析返回 fake-ip。内网域名须由代理解析，内网站点探测失败通常说明代理没能解析内网域名。")
+                Text("VPN 连接、TUN 运行时，也按上面的规则检查保存的 DNS，并要求系统解析返回 fake-ip。VPN 域名须由代理解析，VPN 站点探测失败通常说明代理没能解析 VPN 域名。")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -314,7 +314,7 @@ struct NotificationSettingsSection: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             status
-            Text("同一故障只通知一次，同一轮的多条通知合并为一条；恢复和“未确认”不通知。通知内容不包含内网站点 URL。")
+            Text("同一故障只通知一次，同一轮的多条通知合并为一条；恢复和“未确认”不通知。通知内容不包含 VPN 站点 URL。")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

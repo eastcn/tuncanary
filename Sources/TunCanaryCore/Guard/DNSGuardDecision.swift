@@ -59,7 +59,7 @@ public struct DNSGuardSample: Sendable, Equatable {
     }
 }
 
-/// 阶段 B 的内网探针：通过代理 DNS 查询内网域名的 A 记录。
+/// 阶段 B 的 VPN 探针：通过代理 DNS 查询 VPN 域名的 A 记录。
 public enum DNSGuardProbeResult: Sendable, Equatable {
     case notRun
     case answered([IPv4])
@@ -88,7 +88,7 @@ public enum DNSGuardDecision: Sendable, Equatable {
     case skip(phase: DNSGuardPhase?, reason: String)
     /// 保存的 DNS 已等于目标值。
     case compliant(phase: DNSGuardPhase)
-    /// 阶段 B 需要先查询内网探针，再用结果重新判定。
+    /// 阶段 B 需要先查询 VPN 探针，再用结果重新判定。
     case needsProbe(host: String, port: Int)
     /// 连续失败后的退避期。
     case backoff(phase: DNSGuardPhase, until: Date)
@@ -112,7 +112,7 @@ public enum DNSGuardDecider {
         return false
     }
 
-    /// 两次采样都满足条件才写入。检查顺序：TUN、主网络服务、VPN、保存的 DNS、退避，阶段 B 再检查写入次数和内网探针。
+    /// 两次采样都满足条件才写入。检查顺序：TUN、主网络服务、VPN、保存的 DNS、退避，阶段 B 再检查写入次数和 VPN 探针。
     public static func decide(first: DNSGuardSample, second: DNSGuardSample, config: DNSGuardConfig,
                               state: DNSGuardState, probe: DNSGuardProbeResult = .notRun,
                               now: Date) -> DNSGuardDecision {
@@ -180,24 +180,24 @@ public enum DNSGuardDecider {
                 return .suspendTakeover
             }
             guard let port = second.proxyDNSPort else {
-                return .skip(phase: phase, reason: "代理配置缺少 DNS 端口，无法检查内网探针")
+                return .skip(phase: phase, reason: "代理配置缺少 DNS 端口，无法检查 VPN 探针")
             }
             guard let range = second.fakeIPRange else {
-                return .skip(phase: phase, reason: "代理不是 fake-ip 模式，无法检查内网探针")
+                return .skip(phase: phase, reason: "代理不是 fake-ip 模式，无法检查 VPN 探针")
             }
             switch probe {
             case .notRun:
                 return .needsProbe(host: config.connectedTakeover.intranetProbeHost, port: port)
             case .answered(let answers) where answers.isEmpty:
-                return .skip(phase: phase, reason: "代理无法解析内网探针（无记录）")
+                return .skip(phase: phase, reason: "代理无法解析 VPN 探针（无记录）")
             case .answered(let answers) where answers.contains(where: range.contains):
-                return .skip(phase: phase, reason: "代理无法解析内网探针（返回 fake-ip）")
+                return .skip(phase: phase, reason: "代理无法解析 VPN 探针（返回 fake-ip）")
             case .answered:
                 break
             case .noResponse:
-                return .skip(phase: phase, reason: "代理无法解析内网探针（超时或无响应）")
+                return .skip(phase: phase, reason: "代理无法解析 VPN 探针（超时或无响应）")
             case .failed(let reason):
-                return .skip(phase: phase, reason: "代理无法解析内网探针（\(reason)）")
+                return .skip(phase: phase, reason: "代理无法解析 VPN 探针（\(reason)）")
             }
         }
 

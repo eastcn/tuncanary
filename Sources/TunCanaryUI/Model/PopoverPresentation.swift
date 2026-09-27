@@ -276,7 +276,7 @@ public enum PopoverFormatter {
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
-    /// 一个站点行。`skippedText` 非空时表示本次未探测（内网站点）。
+    /// 一个站点行。`skippedText` 非空时表示本次未探测（VPN 站点）。
     public static func siteRow(site: Site, history: [SiteResult], skippedText: String? = nil,
                                redactor: Redactor = Redactor()) -> SiteRowPresentation {
         let marks = historyMarks(history)
@@ -309,29 +309,29 @@ public enum PopoverFormatter {
             history: marks, accessibilityText: spoken)
     }
 
-    /// 内网站点未探测时的补充说明。
+    /// VPN 站点未探测时的补充说明。
     public static func intranetNote(_ decision: IntranetProbeDecision) -> String? {
         switch decision {
         case .probe: return nil
-        case .notConfigured: return "未配置内网站点 URL，可在设置中填写"
+        case .notConfigured: return "未配置 VPN 站点 URL，可在设置中填写"
         case .vpnDisconnected: return "VPN 断开时不探测，不计入故障"
         case .vpnUnconfirmed: return "VPN 状态未确认，暂不探测"
         }
     }
 
-    /// 家庭子网未探测时的补充说明。
+    /// Tailnet 子网未探测时的补充说明。
     public static func tailnetNote(_ decision: TailnetProbeDecision) -> String? {
         switch decision {
         case .probe, .notConfigured: return nil
         case .tailscaleDown: return "Tailscale 未连接时不探测，不计入故障"
-        case .sameSubnet: return "目标在当前网络的网段内（例如在家），不经 Tailscale，不探测"
+        case .sameSubnet: return "目标在当前网络的网段内（例如人就在该局域网里），不经 Tailscale，不探测"
         case .routeUnavailable: return "子网路由没有指向 Tailscale，见 Tailnet 卡"
         case .unconfirmed: return "路由未确认，暂不探测"
         }
     }
 
-    /// 按当前启用站点的分组展示；内网站点单独遵守 VPN 门槛，不显示 URL。
-    /// 家庭子网只在配置了目标时显示，遵守 Tailnet 卡的路由判断。
+    /// 按当前启用站点的分组展示；VPN 站点单独遵守 VPN 门槛，不显示 URL。
+    /// Tailnet 子网只在配置了目标时显示，遵守 Tailnet 卡的路由判断。
     public static func siteGroups(history: SiteHistory, intranet decision: IntranetProbeDecision,
                                   tailnet: TailnetProbeDecision = .notConfigured,
                                   redactor: Redactor = Redactor(),
@@ -344,7 +344,7 @@ public enum PopoverFormatter {
                 if let site = decision.site {
                     rows = [siteRow(site: site, history: results, redactor: redactor)]
                 } else {
-                    let placeholder = Site(id: SiteCatalog.intranetID, name: "内网站点", group: .intranet,
+                    let placeholder = Site(id: SiteCatalog.intranetID, name: "VPN 站点", group: .intranet,
                                            url: URL(string: "https://intranet.invalid/")!, isKey: true, inLightProbe: true)
                     var row = siteRow(site: placeholder, history: results, skippedText: decision.skippedText)
                     row.detailText = intranetNote(decision)
@@ -356,7 +356,7 @@ public enum PopoverFormatter {
                 if let site = tailnet.site {
                     rows = [siteRow(site: site, history: results, redactor: redactor)]
                 } else {
-                    let placeholder = Site(id: SiteCatalog.tailnetID, name: "家庭子网", group: .tailnet,
+                    let placeholder = Site(id: SiteCatalog.tailnetID, name: "Tailnet 子网", group: .tailnet,
                                            url: URL(string: "tcp://192.0.2.1:1")!, isKey: true, inLightProbe: true)
                     var row = siteRow(site: placeholder, history: results, skippedText: tailnet.skippedText)
                     row.detailText = tailnetNote(tailnet)

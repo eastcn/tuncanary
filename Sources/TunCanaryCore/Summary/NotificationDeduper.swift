@@ -31,7 +31,7 @@ public struct NotificationDeduper: Sendable, Equatable {
     }
 
     /// 更新活动故障，返回应发送的通知（按严重程度降序）。
-    /// `redactor` 会再过一遍通知正文，确保不含内网站点 URL、内网 IP 与主目录路径。
+    /// `redactor` 会再过一遍通知正文，确保不含 VPN 站点 URL、私有 IP 与主目录路径。
     public mutating func update(with faults: [Fault], redactor: Redactor? = nil) -> [PendingNotification] {
         var current: [FaultKey: Fault] = [:]
         var order: [FaultKey] = []

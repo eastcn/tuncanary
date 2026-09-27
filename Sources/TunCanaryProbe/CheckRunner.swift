@@ -75,7 +75,7 @@ public struct CheckRunner: Sendable {
     /// - Parameters:
     ///   - snapshotProvider: 本机快照采集（`SystemSnapshotProvider`，或测试桩）。
     ///   - prober: 站点探测（`URLSessionSiteProber`，或测试桩）。
-    ///   - settings: 应用设置（内网 URL、预期 DNS 等）。
+    ///   - settings: 应用设置（VPN 站点 URL、预期 DNS 等）。
     ///   - paths: 构造 `LocalEvaluator` 用的已知路径，默认取当前用户。
     ///   - adapters: VPN 适配器配置，须与 `snapshotProvider` 使用的一致。
     ///   - now: 当前时间，默认 `Date.init`；测试可注入固定时钟。
@@ -129,10 +129,10 @@ public struct CheckRunner: Sendable {
         let firstLocal = evaluator.evaluate(snapshot: firstSnapshot, settings: settings, inGracePeriod: false)
         partial.setFirstLocal(firstLocal)
 
-        // 内网探测决策取自第一次评估的 VPN 状态与设置。
+        // VPN 站点探测决策取自第一次评估的 VPN 状态与设置。
         let intranet = SiteCatalog.intranetDecision(intranetURL: settings.intranetURL,
                                                     vpnState: firstLocal.vpnState)
-        // 家庭子网决策取自第一次评估的路由判断。
+        // Tailnet 子网决策取自第一次评估的路由判断。
         let tailnet = firstLocal.tailnetDecision
         let sites = options.full
             ? SiteCatalog.fullCheckSites(intranet: intranet, tailnet: tailnet, sites: settings.sites)

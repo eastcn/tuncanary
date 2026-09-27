@@ -350,7 +350,7 @@ public final class MonitorController {
         let tailnet = local.tailnetDecision
         model.tailnetDecision = tailnet
         if decision.site == nil || tailnet.site == nil {
-            // 不满足条件的内网站点和家庭子网：计数清零，历史清除。
+            // 不满足条件的 VPN 站点和 Tailnet 子网：计数清零，历史清除。
             tracker.recordRound([], intranetEligible: decision.site != nil, tailnetEligible: tailnet.site != nil)
             clearConditionalHistory(intranet: decision.site == nil, tailnet: tailnet.site == nil)
         }

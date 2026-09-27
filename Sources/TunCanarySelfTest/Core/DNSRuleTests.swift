@@ -107,14 +107,14 @@ enum DNSRuleTests {
                 t.expectEqual(relaxed.card(.primaryDNS)?.conclusion, "VPN 已连接（不检查 DNS）")
                 t.expectEqual(relaxed.faultKeys, [])
             },
-            TestCase("由代理接管：连接期按断开期规则检查，内网站点照常探测") { t in
+            TestCase("由代理接管：连接期按断开期规则检查，VPN 站点照常探测") { t in
                 let settings = AppSettings(expectedDNS: ["192.0.2.53"], connectedDNSRule: .proxyTakeover)
                 let ok = evaluate(connected(saved: ["192.0.2.53"]), settings, adapters: [VPNTests.example])
                 let dns = try t.require(ok.card(.primaryDNS))
                 t.expectEqual(ok.vpnState, .connected)
                 t.expectEqual(dns.severity, .ok)
                 t.expectEqual(dns.conclusion, "VPN 已连接，由代理接管：DNS 为 192.0.2.53，符合预期")
-                t.expectEqual(dns.hint, "连接期由代理接管；启用内网站点探测，内网站点失败时先检查代理能否解析内网域名")
+                t.expectEqual(dns.hint, "连接期由代理接管；启用 VPN 站点探测，VPN 站点失败时先检查代理能否解析 VPN 域名")
                 t.expect(ok.intranetProbeEnabled)
                 t.expectNil(ok.learnableExpectedDNS, "连接期的保存值不能作为断开后的预期")
                 t.expect(dns.evidence.contains("系统解析 www.google.com 返回 fake-ip 198.18.0.26"), "\(dns.evidence)")

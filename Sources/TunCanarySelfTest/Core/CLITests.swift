@@ -195,7 +195,7 @@ enum CLITests {
                 let sites = try t.require(object["sites"] as? [[String: Any]])
                 t.expectEqual(sites.map { $0["id"] as? String }, ["tokyo"])
             },
-            TestCase("内网站点：连接时失败为 1，断开时不计") { t in
+            TestCase("VPN 站点：连接时失败为 1，断开时不计") { t in
                 let local = F.evaluate(try F.snapshot(.b))
                 let intranetSite = SiteCatalog.intranet(url: intranetURL)
                 let failing = exampleLight + [site(intranetSite, [.failure(.timeout), .failure(.timeout)])]
@@ -205,7 +205,7 @@ enum CLITests {
                 t.expectEqual(disconnected.exitCode, .ok)
                 let text = connected.renderText(redactor: redactor)
                 t.expectNotContains(text, "corp.example")
-                t.expectContains(text, "内网站点 超时")
+                t.expectContains(text, "VPN 站点 超时")
             },
             TestCase("整体超时 → 3") { t in
                 let result = CLIVerdict.timedOut(checkedAt: now, full: false)
@@ -216,7 +216,7 @@ enum CLITests {
 
             // MARK: 渲染
 
-            TestCase("完整检测按分组输出，内网未连接时跳过") { t in
+            TestCase("完整检测按分组输出，VPN 未连接时跳过 VPN 站点") { t in
                 let local = F.evaluate(try F.snapshot(.a))
                 let sites = FixtureLoader.legacySites.map { s -> SiteResult in
                     s.id == "sony"
@@ -228,7 +228,7 @@ enum CLITests {
                 let text = result.renderText(redactor: redactor)
                 t.expectContains(text, "[正常] 国内：百度 可达 60 ms / 哔哩哔哩 可达 60 ms / 京东 可达 60 ms")
                 t.expectContains(text, "海外：Yahoo! Japan 可达 60 ms / Sony 超时 / Google 可达 60 ms")
-                t.expectContains(text, "[跳过] 内网站点：未连接 VPN")
+                t.expectContains(text, "[跳过] VPN 站点：未连接 VPN")
             },
             TestCase("JSON 输出脱敏且可解析") { t in
                 let local = F.evaluate(try F.snapshot(.b))

@@ -391,10 +391,10 @@ public struct LocalEvaluator: Sendable {
             evidence.append("VPN DNS：\(DNSList.display(provided))")
             // 有的客户端只把第一个 VPN DNS 写入保存值，所以按子集判断。
             if !saved.isEmpty && Set(saved).isSubset(of: Set(provided)) {
-                return card(.ok, "DNS 为 VPN 下发的 DNS（连接期状态）", hint: "连接期状态；启用内网站点探测")
+                return card(.ok, "DNS 为 VPN 下发的 DNS（连接期状态）", hint: "连接期状态；启用 VPN 站点探测")
             }
             return card(.warning, "VPN 已连接，但 DNS 不是 VPN 下发的 DNS",
-                        hint: "VPN DNS 未生效，内网域名可能无法解析", key: .dnsVPNMissing)
+                        hint: "VPN DNS 未生效，VPN 域名可能无法解析", key: .dnsVPNMissing)
         case .disconnected:
             return proxyRuleCard(connected: false)
         }
@@ -422,7 +422,7 @@ public struct LocalEvaluator: Sendable {
                                     key: .dnsBypassProxy)
                     }
                     let prefix = connected ? "VPN 已连接，由代理接管：" : ""
-                    let hint = connected ? "连接期由代理接管；启用内网站点探测，内网站点失败时先检查代理能否解析内网域名" : nil
+                    let hint = connected ? "连接期由代理接管；启用 VPN 站点探测，VPN 站点失败时先检查代理能否解析 VPN 域名" : nil
                     switch rule {
                     case .equals: return card(.ok, "\(prefix)DNS 为 \(expectedText)，符合预期", hint: hint)
                     case .empty: return card(.ok, "\(prefix)DNS 为空，符合预期", hint: hint)

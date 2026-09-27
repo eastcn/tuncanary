@@ -47,7 +47,7 @@ public struct IPv4: Hashable, Comparable, Sendable, CustomStringConvertible, Cod
         lhs.rawValue < rhs.rawValue
     }
 
-    /// 是否属于内网或本地网段（脱敏时只保留首段）：
+    /// 是否属于私有或本地网段（脱敏时只保留首段）：
     /// 10/8、172.16/12、192.168/16、100.64/10（CGNAT，含 Tailscale）、169.254/16。
     public var isPrivateForRedaction: Bool {
         IPv4CIDR.redactedNetworks.contains { $0.contains(self) }
@@ -150,7 +150,7 @@ public struct IPv4CIDR: Hashable, Sendable, CustomStringConvertible {
     /// Clash 默认 fake-ip 所在的 198.18.0.0/15（基准测试保留段）。配置不可读时用于排除。
     public static let benchmarkFakeIP = IPv4CIDR("198.18.0.0/15")!
 
-    /// 脱敏时视为内网的网段。
+    /// 脱敏时视为私有的网段。
     static let redactedNetworks: [IPv4CIDR] = [
         IPv4CIDR("10.0.0.0/8")!,
         IPv4CIDR("172.16.0.0/12")!,

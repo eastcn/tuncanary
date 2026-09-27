@@ -1,6 +1,6 @@
 import Foundation
 
-/// 家庭子网探测目标：一个 IPv4 地址和 TCP 端口，例如 `192.0.2.10:443`。
+/// Tailnet 子网探测目标：一个 IPv4 地址和 TCP 端口，例如 `192.0.2.10:443`。
 public struct TailnetTarget: Sendable, Hashable, Codable, CustomStringConvertible {
     public var address: IPv4
     public var port: Int
@@ -36,7 +36,7 @@ public struct TailnetTarget: Sendable, Hashable, Codable, CustomStringConvertibl
         let container = try decoder.singleValueContainer()
         let text = try container.decode(String.self)
         guard let target = TailnetTarget(text) else {
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "家庭子网目标无效：\(text)")
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Tailnet 子网目标无效：\(text)")
         }
         self = target
     }
@@ -88,7 +88,7 @@ public struct TailnetProbeSnapshot: Sendable, Equatable {
     }
 }
 
-/// Tailnet 判定：Tailscale 隧道、tailnet 路由、MagicDNS，以及家庭子网目标的路由走向。
+/// Tailnet 判定：Tailscale 隧道、tailnet 路由、MagicDNS，以及 Tailnet 子网目标的路由走向。
 struct TailnetAnalysis {
     /// Tailnet 卡；没有 Tailscale 隧道且没配置目标时为 nil。
     var card: StatusCard?
@@ -212,7 +212,7 @@ struct TailnetAnalysis {
         }
         if let problem = magicDNSProblem { evidence.append(problem) }
 
-        // 3. 家庭子网目标的走向。
+        // 3. Tailnet 子网目标的走向。
         var decision: TailnetProbeDecision = .notConfigured
         var subnetProblem: String?
         var sameSubnet = false
@@ -220,15 +220,15 @@ struct TailnetAnalysis {
             let route = RouteLookup.bestRoute(for: target.address, in: routes)
             if route?.interfaceName == tunnel.name {
                 decision = .probe(site)
-                evidence.append("家庭子网 \(target.address) 经 \(describe(route))")
+                evidence.append("Tailnet 子网 \(target.address) 经 \(describe(route))")
             } else if let route, !route.interfaceName.hasPrefix("utun"), !route.isDefault, !route.flags.contains("G") {
                 // 直连网段（没有网关）：目标就在当前网络里。经网关或默认路由出去则说明子网路由没有生效。
                 decision = .sameSubnet
                 sameSubnet = true
-                evidence.append("家庭子网 \(target.address) 经 \(route.interfaceName)，与当前网络网段相同")
+                evidence.append("Tailnet 子网 \(target.address) 经 \(route.interfaceName)，与当前网络网段相同")
             } else {
                 decision = .routeUnavailable
-                subnetProblem = "家庭子网 \(target.address) 经 \(describe(route))，子网路由未生效"
+                subnetProblem = "Tailnet 子网 \(target.address) 经 \(describe(route))，子网路由未生效"
                 evidence.append(subnetProblem!)
             }
         }
@@ -242,7 +242,7 @@ struct TailnetAnalysis {
                           hint: "按名称访问 tailnet 设备可能失败；按 IP 访问不受影响。检查代理的 fake-ip 过滤名单是否包含 *.ts.net",
                           evidence: evidence, key: .tailnetMagicDNS)
         } else if sameSubnet {
-            result = card(.unknown, "当前网络与家庭子网网段相同，不探测", evidence: evidence)
+            result = card(.unknown, "当前网络与 Tailnet 子网网段相同，不探测", evidence: evidence)
         } else {
             let magic = magicDNSVerified ? "，MagicDNS 正常" : ""
             result = card(.ok, "已连接（\(tunnel.name)）\(magic)", evidence: evidence)

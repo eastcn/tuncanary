@@ -3,7 +3,7 @@ import Foundation
 /// 脱敏诊断摘要（“复制脱敏诊断摘要”按钮的内容）。
 ///
 /// 包含：生成时间、应用版本、macOS 版本、总体状态和原因、各状态卡的结论与关键证据、
-/// 各站点的类别、延迟和最近 5 次结果，以及最近的故障事件。内网站点只显示“已配置/未配置”。
+/// 各站点的类别、延迟和最近 5 次结果，以及最近的故障事件。VPN 站点只显示“已配置/未配置”。
 public struct DiagnosticSummary: Sendable {
     /// 一个站点的诊断条目。
     public struct SiteEntry: Sendable, Equatable {
@@ -29,11 +29,11 @@ public struct DiagnosticSummary: Sendable {
     public var local: LocalAssessment?
     public var sites: [SiteEntry]
     public var intranetConfigured: Bool
-    /// 内网站点未探测时的说明（未配置、未连接 VPN 等）。
+    /// VPN 站点未探测时的说明（未配置、未连接 VPN 等）。
     public var intranetSkippedText: String?
-    /// 是否配置了家庭子网目标。摘要中不写目标地址。
+    /// 是否配置了 Tailnet 子网目标。摘要中不写目标地址。
     public var tailnetConfigured: Bool
-    /// 家庭子网未探测时的说明。
+    /// Tailnet 子网未探测时的说明。
     public var tailnetSkippedText: String?
     /// 最近的故障事件（旧 → 新）。
     public var events: [FaultEvent]
@@ -64,7 +64,7 @@ public struct DiagnosticSummary: Sendable {
         self.events = events
     }
 
-    /// 由站点历史构造公开站点条目（内网站点和家庭子网另行传入）。
+    /// 由站点历史构造公开站点条目（VPN 站点和 Tailnet 子网另行传入）。
     public static func siteEntries(history: SiteHistory, sites: [Site] = SiteCatalog.defaultSites) -> [SiteEntry] {
         sites.filter { $0.isEnabled && !$0.group.isConditional }
             .map { SiteEntry(site: $0, history: history.recent(for: $0.id)) }
@@ -118,14 +118,14 @@ public struct DiagnosticSummary: Sendable {
             lines.append(group.displayName)
             for entry in entries { lines.append("  " + Self.siteLine(entry)) }
         }
-        var intranet = "内网站点：\(intranetConfigured ? "已配置" : "未配置")"
+        var intranet = "VPN 站点：\(intranetConfigured ? "已配置" : "未配置")"
         if let entry = sites.first(where: { $0.site.group == .intranet }), entry.latest != nil {
             intranet += "；" + Self.siteLine(entry, includeName: false)
         } else if let skipped = intranetSkippedText {
             intranet += "（\(skipped)）"
         }
         lines.append(intranet)
-        var tailnet = "家庭子网：\(tailnetConfigured ? "已配置" : "未配置")"
+        var tailnet = "Tailnet 子网：\(tailnetConfigured ? "已配置" : "未配置")"
         if let entry = sites.first(where: { $0.site.group == .tailnet }), entry.latest != nil {
             tailnet += "；" + Self.siteLine(entry, includeName: false)
         } else if tailnetConfigured, let skipped = tailnetSkippedText {

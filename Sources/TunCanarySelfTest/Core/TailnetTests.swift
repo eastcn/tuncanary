@@ -1,7 +1,7 @@
 import Foundation
 import TunCanaryCore
 
-/// Tailnet 卡、家庭子网目标与路由查询。全部使用合成数据。
+/// Tailnet 卡、Tailnet 子网目标与路由查询。全部使用合成数据。
 enum TailnetTests {
     static let tailscale = InterfaceInfo(name: "utun3", isUp: true, ipv4Addresses: [IPv4("100.80.1.2")!])
     static let proxyTun = InterfaceInfo(name: "utun1024", isUp: true, ipv4Addresses: [IPv4("198.18.0.1")!])
@@ -13,7 +13,7 @@ enum TailnetTests {
         RouteEntry(destination: destination, gateway: gateway, flags: flags, interfaceName: interface)
     }
 
-    /// 在外面：Tailscale 接受了家庭子网 10.20/16 的路由，代理 TUN 接管其余流量。
+    /// 在外面：Tailscale 接受了 Tailnet 子网 10.20/16 的路由，代理 TUN 接管其余流量。
     static let awayRoutes: [RouteEntry] = [
         route("default", "en0", flags: "UGScg", gateway: "192.168.1.1"),
         route("default", "utun3", flags: "UCSIg"),
@@ -65,7 +65,7 @@ enum TailnetTests {
 
     static var suite: TestSuite {
         TestSuite("Core.Tailnet", [
-            TestCase("家庭子网目标：只接受 IPv4:端口，编码为字符串") { t in
+            TestCase("Tailnet 子网目标：只接受 IPv4:端口，编码为字符串") { t in
                 let target = try t.require(TailnetTarget("192.0.2.10:443"))
                 t.expectEqual(target.description, "192.0.2.10:443")
                 t.expectEqual(target.url.absoluteString, "tcp://192.0.2.10:443")
@@ -156,37 +156,37 @@ enum TailnetTests {
                 t.expectEqual(disabled.conclusion, "已连接（utun3）")
                 t.expectContains(disabled.evidence.joined(separator: "\n"), "未启用 MagicDNS")
             },
-            TestCase("家庭子网：经 Tailscale 时探测") { t in
+            TestCase("Tailnet 子网：经 Tailscale 时探测") { t in
                 let result = analyze(snapshot(), target: "10.20.0.10:443")
                 t.expectEqual(result.decision.site?.url.absoluteString, "tcp://10.20.0.10:443")
                 t.expectEqual(result.decision.site?.group, .tailnet)
                 t.expectEqual(result.card?.severity, .ok)
-                t.expectContains(result.card?.evidence.joined(separator: "\n") ?? "", "家庭子网 10.20.0.10 经 utun3（Tailscale）")
+                t.expectContains(result.card?.evidence.joined(separator: "\n") ?? "", "Tailnet 子网 10.20.0.10 经 utun3（Tailscale）")
             },
-            TestCase("家庭子网：与当前网络同网段时判灰，不探测，整体仍为绿") { t in
+            TestCase("Tailnet 子网：与当前网络同网段时判灰，不探测，整体仍为绿") { t in
                 let result = analyze(snapshot(), target: "192.168.1.40:443")
                 t.expectEqual(result.decision, .sameSubnet)
                 t.expectEqual(result.card?.severity, .unknown)
-                t.expectEqual(result.card?.conclusion, "当前网络与家庭子网网段相同，不探测")
+                t.expectEqual(result.card?.conclusion, "当前网络与 Tailnet 子网网段相同，不探测")
                 t.expectEqual(result.assessment.severity, .ok)
                 t.expectEqual(result.assessment.primaryReason, "各项检查正常")
             },
-            TestCase("家庭子网：经默认路由或代理 TUN 出去时，子网路由未生效，红") { t in
+            TestCase("Tailnet 子网：经默认路由或代理 TUN 出去时，子网路由未生效，红") { t in
                 let viaDefault = analyze(snapshot(), target: "172.30.0.5:443")
                 t.expectEqual(viaDefault.decision, .routeUnavailable)
                 t.expectEqual(viaDefault.card?.severity, .critical)
                 t.expectEqual(viaDefault.card?.faultKey, .tailnetSubnetRoute)
 
                 let viaProxy = analyze(snapshot(), target: "10.30.0.5:443")
-                t.expectEqual(viaProxy.card?.conclusion, "家庭子网 10.30.0.5 经 utun1024（代理 TUN），子网路由未生效")
+                t.expectEqual(viaProxy.card?.conclusion, "Tailnet 子网 10.30.0.5 经 utun1024（代理 TUN），子网路由未生效")
             },
-            TestCase("宽限期内：家庭子网决策为未确认") { t in
+            TestCase("宽限期内：Tailnet 子网决策为未确认") { t in
                 let settings = AppSettings(tailnetTarget: TailnetTarget("10.20.0.10:443"))
                 let assessment = LocalEvaluator(paths: KnownPaths(homeDirectory: "/Users/tester"))
                     .evaluate(snapshot: snapshot(), settings: settings, inGracePeriod: true)
                 t.expectEqual(assessment.tailnetDecision, .unconfirmed)
             },
-            TestCase("家庭子网连续三轮失败为红；不满足条件时计数清零") { t in
+            TestCase("Tailnet 子网连续三轮失败为红；不满足条件时计数清零") { t in
                 let site = SiteCatalog.tailnet(target: TailnetTarget("10.20.0.10:443")!)
                 let failed = SiteResult(site: site, category: .timeout, medianLatency: nil,
                                         attempts: [.failure(.timeout)], checkedAt: Date())
@@ -197,7 +197,7 @@ enum TailnetTests {
                 let fault = try t.require(tracker.faults(sites: [site]).first)
                 t.expectEqual(fault.key, .site("tailnet"))
                 t.expectEqual(fault.severity, .critical)
-                t.expectEqual(fault.message, "家庭子网连续三轮访问失败")
+                t.expectEqual(fault.message, "Tailnet 子网连续三轮访问失败")
                 tracker.recordRound([], intranetEligible: false, tailnetEligible: false)
                 t.expectEqual(tracker.failureCount(for: SiteCatalog.tailnetID), 0)
             },
@@ -210,15 +210,15 @@ enum TailnetTests {
                     site: site, outcomes: [.tcpAnswered(latency: 0.012, refused: true)], checkedAt: Date())
                 t.expectEqual(answered.summaryText, "可达 12 ms")
             },
-            TestCase("命令行：Tailnet 灰色不影响退出码；家庭子网失败判红") { t in
+            TestCase("命令行：Tailnet 灰色不影响退出码；Tailnet 子网失败判红") { t in
                 let home = analyze(snapshot(), target: "192.168.1.40:443")
                 let gray = CLIVerdict.make(firstLocal: home.assessment, secondLocal: nil, siteResults: [],
                                            intranet: .notConfigured, tailnet: home.decision, full: false,
                                            checkedAt: Date(timeIntervalSince1970: 1_790_424_000), configuredSites: [])
                 t.expectEqual(gray.exitCode, .ok)
                 let text = gray.renderText(redactor: Redactor())
-                t.expectContains(text, "[未确认] Tailnet：当前网络与家庭子网网段相同，不探测")
-                t.expectContains(text, "家庭子网 当前网络与家庭子网网段相同")
+                t.expectContains(text, "[未确认] Tailnet：当前网络与 Tailnet 子网网段相同，不探测")
+                t.expectContains(text, "Tailnet 子网 当前网络与 Tailnet 子网网段相同")
                 let json = gray.renderJSON(redactor: Redactor())
                 let object = try t.require(try JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
                 let tailnet = try t.require(object["tailnet"] as? [String: Any])
@@ -235,15 +235,15 @@ enum TailnetTests {
                                           checkedAt: Date(timeIntervalSince1970: 1_790_424_000), configuredSites: [])
                 t.expectEqual(red.exitCode, .critical)
                 t.expectEqual(red.faults.map(\.key), [.site("tailnet")])
-                t.expectContains(red.renderText(redactor: Redactor()), "家庭子网 超时")
+                t.expectContains(red.renderText(redactor: Redactor()), "Tailnet 子网 超时")
             },
-            TestCase("站点清单：家庭子网只在满足条件时加入，保留 ID 不能用于公开站点") { t in
+            TestCase("站点清单：Tailnet 子网只在满足条件时加入，保留 ID 不能用于公开站点") { t in
                 let site = SiteCatalog.tailnet(target: TailnetTarget("10.20.0.10:443")!)
                 let light = SiteCatalog.lightProbeSites(intranet: .notConfigured, tailnet: .probe(site))
                 t.expectEqual(light.last, site)
                 t.expect(!SiteCatalog.lightProbeSites(intranet: .notConfigured, tailnet: .sameSubnet).contains(site))
                 t.expect(!SiteGroup.tailnet.isValidPublicGroup)
-                t.expect(!SiteGroup(rawValue: "家庭子网").isValidPublicGroup)
+                t.expect(!SiteGroup(rawValue: "Tailnet 子网").isValidPublicGroup)
                 var reserved = SiteCatalog.google
                 reserved.id = SiteCatalog.tailnetID
                 t.expect(SettingsValidator.validateSites([reserved]).contains(.siteIDInvalid))

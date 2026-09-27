@@ -17,7 +17,7 @@ enum LocalEvaluatorTests {
             TestCase("表2 绿：VPN 已连接，保存值为状态文件中的 VPN DNS") { t in
                 let result = F.evaluate(try F.snapshot(.b))
                 t.expectEqual(result.card(.primaryDNS)?.severity, .ok)
-                t.expectEqual(result.card(.primaryDNS)?.hint, "连接期状态；启用内网站点探测")
+                t.expectEqual(result.card(.primaryDNS)?.hint, "连接期状态；启用 VPN 站点探测")
                 // 两个 VPN DNS 都写入也算。
                 let both = F.withSavedDNS(try F.snapshot(.b), ["10.9.0.54", "10.9.0.53"])
                 t.expectEqual(F.evaluate(both).severity, .ok)
@@ -28,7 +28,7 @@ enum LocalEvaluatorTests {
                     let dns = try t.require(result.card(.primaryDNS))
                     t.expectEqual(dns.severity, .warning, "\(saved)")
                     t.expectEqual(dns.faultKey, .dnsVPNMissing)
-                    t.expectEqual(dns.hint, "VPN DNS 未生效，内网域名可能无法解析")
+                    t.expectEqual(dns.hint, "VPN DNS 未生效，VPN 域名可能无法解析")
                     t.expectEqual(result.faultKeys, [.dnsVPNMissing])
                 }
             },
@@ -155,7 +155,7 @@ enum LocalEvaluatorTests {
                 t.expectEqual(result.faultKeys, [.mihomoNoResponse])
             },
             TestCase("表9 灰：VPN 状态未确认，不评估 DNS 规则、不给修复建议") { t in
-                // C 组的 DNS 本应判红，但VPN 进程存在而无隧道 → 未确认。
+                // C 组的 DNS 本应判红，但 VPN 进程存在而无隧道 → 未确认。
                 let snapshot = F.addingProcess(try F.snapshot(.c), F.vpnProcess)
                 let result = F.evaluate(snapshot)
                 t.expectEqual(result.vpnState, .unconfirmed)
@@ -193,7 +193,7 @@ enum LocalEvaluatorTests {
                 snapshot.clashConfig = .collected(ClashConfig())
                 t.expectEqual(F.evaluate(snapshot).card(.proxyTun)?.conclusion, "证据不足：配置中未找到 TUN 开关")
             },
-            TestCase("表11：VPN 断开时不探测内网站点，显示“未连接 VPN”") { t in
+            TestCase("表11：VPN 断开时不探测 VPN 站点，显示“未连接 VPN”") { t in
                 let result = F.evaluate(try F.snapshot(.a))
                 t.expect(!result.intranetProbeEnabled)
                 let decision = SiteCatalog.intranetDecision(intranetURL: URL(string: "https://intranet.example.test/")!,
@@ -332,7 +332,7 @@ enum LocalEvaluatorTests {
                 var snapshot = try F.snapshot(.a)
                 snapshot.clashConfig = .failed(reason: "不可读")
                 let result = F.evaluate(snapshot)
-                // utun1024 有 11 条路由，但位于 fake-ip 网段，不能当成VPN 隧道。
+                // utun1024 有 11 条路由，但位于 fake-ip 网段，不能当成 VPN 隧道。
                 t.expectEqual(result.vpnState, .disconnected)
             },
             TestCase("配置中的隧道网段用于识别") { t in

@@ -35,7 +35,7 @@ struct SiteGroupView: View {
 }
 
 /// 一个站点：名称、可达性类别、延迟中位数、最近 5 次结果排成一行；
-/// 错误原因与内网说明另起一行，悬停提示也保留相同信息。
+/// 错误原因与 VPN 站点说明另起一行，悬停提示也保留相同信息。
 struct SiteRowView: View {
     let row: SiteRowPresentation
 

@@ -2,7 +2,7 @@ import Foundation
 import TunCanaryCore
 import TunCanaryUI
 
-/// 弹窗格式化逻辑：状态文字、时间、延迟、最近 5 次结果、错误原因、内网决策与恢复命令。
+/// 弹窗格式化逻辑：状态文字、时间、延迟、最近 5 次结果、错误原因、VPN 站点决策与恢复命令。
 enum UIPresentationTests {
     static let shanghai = TimeZone(identifier: "Asia/Shanghai")!
     /// 2026-09-26 12:00:00 UTC = 20:00:00 上海。
@@ -145,7 +145,7 @@ enum UIPresentationTests {
                 let single = [result(intranet, [.failure(.dnsFailure, detail: "无法解析 intranet.corp.example")])]
                 let detail = try t.require(PopoverFormatter.errorDetail(single, redactor: Redactor(intranetURL: url)))
                 t.expectNotContains(detail, "intranet.corp.example")
-                t.expectContains(detail, "[内网站点]")
+                t.expectContains(detail, "[VPN 站点]")
             },
             TestCase("站点行：类别文字、延迟、历史与朗读文本") { t in
                 let untested = PopoverFormatter.siteRow(site: SiteCatalog.sony, history: [])
@@ -167,7 +167,7 @@ enum UIPresentationTests {
                 t.expectEqual(claude.tone, .info)
                 t.expectEqual(claude.detailText, "HTTP 403")
             },
-            TestCase("内网站点按决策显示，不出现 URL") { t in
+            TestCase("VPN 站点按决策显示，不出现 URL") { t in
                 let url = URL(string: "https://intranet.corp.example/health")!
                 func intranetRow(_ decision: IntranetProbeDecision, history: SiteHistory = SiteHistory()) -> SiteRowPresentation? {
                     PopoverFormatter.siteGroups(history: history, intranet: decision, redactor: Redactor(intranetURL: url))
@@ -175,9 +175,9 @@ enum UIPresentationTests {
                 }
                 let notConfigured = try t.require(intranetRow(.notConfigured))
                 t.expectEqual(notConfigured.statusText, "未验证")
-                t.expectEqual(notConfigured.detailText, "未配置内网站点 URL，可在设置中填写")
+                t.expectEqual(notConfigured.detailText, "未配置 VPN 站点 URL，可在设置中填写")
                 t.expectEqual(notConfigured.tone, .neutral)
-                t.expectContains(notConfigured.accessibilityText, "未配置内网站点 URL")
+                t.expectContains(notConfigured.accessibilityText, "未配置 VPN 站点 URL")
                 t.expectEqual(try t.require(intranetRow(.vpnDisconnected)).statusText, "未连接 VPN")
                 t.expectEqual(try t.require(intranetRow(.vpnUnconfirmed)).statusText, "VPN 状态未确认")
 
@@ -185,7 +185,7 @@ enum UIPresentationTests {
                 var history = SiteHistory()
                 history.record(result(site, [ok(28)]))
                 let probed = try t.require(intranetRow(.probe(site), history: history))
-                t.expectEqual(probed.name, "内网站点")
+                t.expectEqual(probed.name, "VPN 站点")
                 t.expectEqual(probed.statusText, "可达")
                 t.expectEqual(probed.latencyText, "28 ms")
                 for row in [notConfigured, probed] {
@@ -195,11 +195,11 @@ enum UIPresentationTests {
             },
             TestCase("站点分组：顺序与每组站点") { t in
                 let groups = PopoverFormatter.siteGroups(history: SiteHistory(), intranet: .notConfigured)
-                t.expectEqual(groups.map(\.title), ["国内", "海外", "内网站点"])
+                t.expectEqual(groups.map(\.title), ["国内", "海外", "VPN 站点"])
                 t.expectEqual(groups.map { $0.rows.map(\.name) }, [
                     ["百度", "哔哩哔哩"],
                     ["Google", "GitHub", "Cloudflare"],
-                    ["内网站点"],
+                    ["VPN 站点"],
                 ])
                 t.expectEqual(groups.flatMap(\.rows).filter(\.isKey).map(\.id), ["baidu", "google", "github", "intranet"])
             },
@@ -209,7 +209,7 @@ enum UIPresentationTests {
                                   isKey: true, inLightProbe: true)
                 let groups = PopoverFormatter.siteGroups(history: SiteHistory(), intranet: .notConfigured,
                                                          sites: [custom])
-                t.expectEqual(groups.map(\.title), ["东亚", "内网站点"])
+                t.expectEqual(groups.map(\.title), ["东亚", "VPN 站点"])
                 t.expectEqual(groups.map { $0.rows.map(\.id) }, [["custom"], [SiteCatalog.intranetID]])
                 let empty = PopoverFormatter.siteGroups(history: SiteHistory(), intranet: .notConfigured, sites: [])
                 t.expectEqual(empty.map(\.group), [.intranet])

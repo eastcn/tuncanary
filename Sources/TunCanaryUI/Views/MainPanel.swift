@@ -131,7 +131,7 @@ struct ActionBar: View {
                     }
                 }
                 .buttonStyle(PillButtonStyle())
-                .help("复制不含内网站点 URL、内网 IP 和主目录路径的诊断摘要")
+                .help("复制不含 VPN 站点 URL、私有 IP 和主目录路径的诊断摘要")
                 Spacer(minLength: 0)
             }
             if let progress = model.checkProgress {

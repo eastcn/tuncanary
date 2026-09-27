@@ -1,14 +1,14 @@
 import Foundation
 
-/// 脱敏：内网 IP 只保留首段；去掉主目录路径；不输出内网站点 URL。
+/// 脱敏：私有 IP 只保留首段；去掉主目录路径；不输出 VPN 站点 URL。
 /// 诊断摘要、命令行输出和通知正文都经过它。
 public struct Redactor: Sendable {
     public var homeDirectory: String?
     public var intranetURL: URL?
     public var siteURLs: [URL]
 
-    /// 内网站点 URL 与主机名的替代文本。
-    public static let intranetPlaceholder = "[内网站点]"
+    /// VPN 站点 URL 与主机名的替代文本。
+    public static let intranetPlaceholder = "[VPN 站点]"
     /// 检测站点 URL 与主机名的替代文本。
     public static let sitePlaceholder = "[检测站点]"
 

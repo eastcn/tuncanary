@@ -96,7 +96,7 @@ public struct DNSGuardSystemWriter: DNSGuardWriting {
     }
 }
 
-/// 通过代理 DNS 查询内网探针的 A 记录。
+/// 通过代理 DNS 查询 VPN 探针的 A 记录。
 public struct DNSGuardSystemProber: DNSGuardProbing {
     public var host: String
     public var timeout: TimeInterval

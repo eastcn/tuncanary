@@ -111,7 +111,7 @@ enum NotificationTests {
                 let result = deduper.update(with: [fault(.dnsBypassProxy, .warning), fault(.dnsBypassProxy, .warning)])
                 t.expectEqual(result.count, 1)
             },
-            TestCase("通知正文不含内网站点 URL，带处理提示") { t in
+            TestCase("通知正文不含 VPN 站点 URL，带处理提示") { t in
                 let url = URL(string: "https://intranet.corp.example/health")!
                 let redactor = Redactor(homeDirectory: "/Users/tester", intranetURL: url)
                 var deduper = NotificationDeduper()

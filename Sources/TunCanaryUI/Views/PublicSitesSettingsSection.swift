@@ -43,7 +43,7 @@ struct PublicSitesSettingsSection: View {
             }
             .buttonStyle(.plain)
             if isExpanded {
-                Text("公开站点最多 20 个；未启用的站点保留在设置中，不参与检测。内网站点仍由上方 URL 和 VPN 状态单独控制。")
+                Text("公开站点最多 20 个；未启用的站点保留在设置中，不参与检测。VPN 站点仍由上方 URL 和 VPN 状态单独控制。")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -147,7 +147,7 @@ private struct PublicSiteEditorRow: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 12.5))
                         .accessibilityLabel(Text("分组名称"))
-                    Text("直接输入已有组名可归入该组；内网站点在上方单独配置。")
+                    Text("直接输入已有组名可归入该组；VPN 站点在上方单独配置。")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                     if let error = errors?.group {

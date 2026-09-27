@@ -2,12 +2,12 @@ import Foundation
 
 /// DNS 守护进程的配置（`/Library/Application Support/TunCanary/dns-guard.json`，归 root 所有）。
 ///
-/// 目标 DNS、内网探针域名等本机值只写在这个文件里。安装脚本按当前登录用户生成，之后修改需要 `sudo`。
+/// 目标 DNS、VPN 探针域名等本机值只写在这个文件里。安装脚本按当前登录用户生成，之后修改需要 `sudo`。
 public struct DNSGuardConfig: Sendable, Equatable, Codable {
     /// 连接期接管（阶段 B）。
     public struct ConnectedTakeover: Sendable, Equatable, Codable {
         public var enabled: Bool
-        /// 通过代理 DNS 查询的内网域名。查到真实地址，说明代理能解析内网域名。
+        /// 通过代理 DNS 查询的 VPN 域名。查到真实地址，说明代理能解析 VPN 域名。
         public var intranetProbeHost: String
         /// 10 分钟内最多写入几次。达到上限说明 VPN 客户端在反复改回自己的 DNS，停用接管直到 VPN 断开。
         public var maxWritesPerTenMinutes: Int

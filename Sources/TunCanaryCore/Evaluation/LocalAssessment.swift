@@ -6,7 +6,7 @@ public enum StatusCardKind: String, Sendable, Codable, CaseIterable {
     case vpn
     case primaryDNS
     case proxyDNS
-    /// 只在存在 Tailscale 隧道或配置了家庭子网目标时出现。
+    /// 只在存在 Tailscale 隧道或配置了 Tailnet 子网目标时出现。
     case tailnet
 
     /// 弹窗中的顺序：Clash TUN、VPN、主网络 DNS、Mihomo DNS、Tailnet。
@@ -72,7 +72,7 @@ public struct StatusCard: Sendable, Equatable, Identifiable {
         "\(label)：\(conclusion)"
     }
 
-    /// 是否计入整体结论。Tailnet 卡的灰色表示“这个场景判断不了”（如在家时网段重叠），不拉低整体。
+    /// 是否计入整体结论。Tailnet 卡的灰色表示“这个场景判断不了”（如人就在子网所在的局域网里，网段重叠），不拉低整体。
     public var countsTowardOverall: Bool {
         !(kind == .tailnet && severity == .unknown)
     }
@@ -124,9 +124,9 @@ public struct LocalAssessment: Sendable, Equatable {
     public var tunState: TunState
     public var vpnState: VPNConnectionState
     public var isInGracePeriod: Bool
-    /// 是否启用内网站点探测（VPN 已连接时为 true）。
+    /// 是否启用 VPN 站点探测（VPN 已连接时为 true）。
     public var intranetProbeEnabled: Bool
-    /// 家庭子网探测决策。
+    /// Tailnet 子网探测决策。
     public var tailnetDecision: TailnetProbeDecision
     /// 主网络服务名，例如 “Wi-Fi”。
     public var primaryServiceName: String?

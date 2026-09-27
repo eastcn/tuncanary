@@ -35,7 +35,7 @@ public protocol DNSGuardWriting: Sendable {
     func readBack(serviceID: String) -> DNSGuardReadBack
 }
 
-/// 通过代理 DNS 查询内网探针。
+/// 通过代理 DNS 查询 VPN 探针。
 public protocol DNSGuardProbing: Sendable {
     func probe(host: String, port: Int) async -> DNSGuardProbeResult
 }
@@ -68,7 +68,7 @@ public struct DNSGuardRunner: Sendable {
     /// 切换刚结束就能写入，不必等下一次定时运行。
     public static let transitionRetries = 3
     public static let transitionRetryInterval: TimeInterval = 5
-    /// 内网探针失败时重查的次数与间隔。VPN 刚连上的几秒里代理可能还查不到内网域名。
+    /// VPN 探针失败时重查的次数与间隔。VPN 刚连上的几秒里代理可能还查不到 VPN 域名。
     public static let probeRetries = 3
     public static let probeRetryInterval: TimeInterval = 5
 
@@ -137,7 +137,7 @@ public struct DNSGuardRunner: Sendable {
             event = makeEvent(phase, .skipped, reason)
         case .needsProbe:
             // 探针已经执行过，不会再次要求；按跳过处理以防万一。
-            event = makeEvent(.connected, .skipped, "内网探针未完成")
+            event = makeEvent(.connected, .skipped, "VPN 探针未完成")
         case .compliant(let phase):
             state.consecutiveFailures = 0
             event = makeEvent(phase, .compliant, nil)

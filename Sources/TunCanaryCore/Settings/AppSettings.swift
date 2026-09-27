@@ -25,7 +25,7 @@ public enum ConnectedDNSRule: String, Sendable, Equatable, Codable, CaseIterable
     /// 是 VPN 适配器报告的 DNS 的子集；适配器不报告 DNS 时不检查。
     case vpnProvided
     /// 由代理接管：TUN 运行时与断开期同样检查（保存的 DNS 符合断开期规则，系统解析返回 fake-ip）。
-    /// 内网域名由代理按域名策略解析。
+    /// VPN 域名由代理按域名策略解析。
     case proxyTakeover
 
     public var displayName: String {
@@ -117,9 +117,9 @@ public struct AppSettings: Sendable, Equatable, Codable {
     public static let defaultLightProbeInterval: TimeInterval = 120
     public static let `default` = AppSettings()
 
-    /// 内网站点 URL，只在 VPN 已连接时探测；未配置为 nil。
+    /// VPN 站点 URL，只在 VPN 已连接时探测；未配置为 nil。
     public var intranetURL: URL?
-    /// 家庭子网目标（IPv4:端口），只在经 Tailscale 路由时做 TCP 探测；未配置为 nil。
+    /// Tailnet 子网目标（IPv4:端口），只在经 Tailscale 路由时做 TCP 探测；未配置为 nil。
     public var tailnetTarget: TailnetTarget?
     /// VPN 断开、TUN 运行时的 DNS 规则。
     public var disconnectedDNSRule: DisconnectedDNSRule
@@ -244,7 +244,7 @@ public struct AppSettings: Sendable, Equatable, Codable {
 
     public var enabledSites: [Site] { sites.filter(\.isEnabled) }
 
-    /// 是否已配置内网站点 URL。
+    /// 是否已配置 VPN 站点 URL。
     public var isIntranetConfigured: Bool {
         intranetURL != nil
     }
@@ -277,13 +277,13 @@ public enum SettingsValidationError: Error, Equatable, Sendable {
     public var message: String {
         switch self {
         case .intranetURLInvalid:
-            return "内网站点 URL 格式不正确"
+            return "VPN 站点 URL 格式不正确"
         case .intranetURLScheme:
-            return "内网站点 URL 必须是 http 或 https"
+            return "VPN 站点 URL 必须是 http 或 https"
         case .intranetURLMissingHost:
-            return "内网站点 URL 缺少主机名"
+            return "VPN 站点 URL 缺少主机名"
         case .tailnetTargetInvalid:
-            return "家庭子网目标须为“IPv4 地址:端口”，例如 192.168.1.10:443"
+            return "Tailnet 子网目标须为“IPv4 地址:端口”，例如 192.168.1.10:443"
         case .expectedDNSEmpty:
             return "预期 DNS 至少填写一个 IPv4 地址"
         case .expectedDNSInvalid(let value):
@@ -295,13 +295,13 @@ public enum SettingsValidationError: Error, Equatable, Sendable {
         case .tooManySites:
             return "公开站点最多只能配置 20 个"
         case .siteIDInvalid:
-            return "站点 ID 不能为空，且不能使用内网站点或家庭子网的保留 ID"
+            return "站点 ID 不能为空，且不能使用 VPN 站点或 Tailnet 子网的保留 ID"
         case .siteIDDuplicate(let id):
             return "站点 ID“\(id)”重复"
         case .siteNameInvalid(let id):
             return "站点“\(id)”的名称须为 1 至 60 个字符"
         case .siteGroupInvalid(let id):
-            return "站点“\(id)”的公开分组须为 1 至 20 个字符，不能使用“内网站点”“家庭子网”或控制字符"
+            return "站点“\(id)”的公开分组须为 1 至 20 个字符，不能使用“VPN 站点”“Tailnet 子网”或控制字符"
         case .siteURLInvalid(let id):
             return "站点“\(id)”的 URL 须为包含主机名的 http 或 https 地址"
         case .siteURLCredentials(let id):
@@ -353,7 +353,7 @@ public enum SettingsValidator {
         return errors
     }
 
-    /// 内网站点 URL：空串表示未配置；否则必须是 http 或 https 且含主机名。
+    /// VPN 站点 URL：空串表示未配置；否则必须是 http 或 https 且含主机名。
     public static func validateIntranetURL(_ text: String) -> Result<URL?, SettingsValidationError> {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return .success(nil) }
@@ -365,7 +365,7 @@ public enum SettingsValidator {
         return .success(url)
     }
 
-    /// 家庭子网目标：空串表示未配置；否则须为 `IPv4:端口`。
+    /// Tailnet 子网目标：空串表示未配置；否则须为 `IPv4:端口`。
     public static func validateTailnetTarget(_ text: String) -> Result<TailnetTarget?, SettingsValidationError> {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty { return .success(nil) }

@@ -112,7 +112,7 @@ enum RuntimeReviewFixTests {
                 t.expect(!keys.contains(.group(.mainland)), "删除后重新加入的百度应从头计数")
                 await rig.stop()
             },
-            TestCase("H1：内网 URL 改变只清零内网") { t in
+            TestCase("H1：VPN 站点 URL 改变只清零 VPN 站点") { t in
                 let intranet = URL(string: "https://intranet.corp.example/health")!
                 let rig = try await Rig(category: .timeout, settings: AppSettings(intranetURL: intranet),
                                         scenario: .b)
@@ -124,10 +124,10 @@ enum RuntimeReviewFixTests {
                 try await waitUntil { await rig.prober.count == 16 }
                 try await waitUntil { await rig.model.checkProgress == nil }
                 let after = await rig.model.overall.faultKeys
-                t.expect(!after.contains(.site(SiteCatalog.intranetID)), "内网目标改变，计数应清零")
+                t.expect(!after.contains(.site(SiteCatalog.intranetID)), "VPN 站点目标改变，计数应清零")
                 t.expect(after.contains(.group(.mainland)), "公开站点计数应保留")
                 let intranetHistory = await rig.model.siteHistory.recent(for: SiteCatalog.intranetID)
-                t.expectEqual(intranetHistory.count, 1, "旧内网 URL 的历史应清除")
+                t.expectEqual(intranetHistory.count, 1, "旧 VPN 站点 URL 的历史应清除")
                 await rig.stop()
             },
             TestCase("L2：站点 ID 重复时保留历史不崩溃") { t in

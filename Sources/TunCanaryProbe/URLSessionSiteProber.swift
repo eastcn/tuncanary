@@ -185,7 +185,7 @@ public struct URLSessionSiteProber: SiteProbing, Sendable {
     }
 
     /// 串行发起 `attempts` 次 GET，用 `SiteAggregator.aggregate` 汇总。不抛错。
-    /// URL 为 `tcp://地址:端口`（家庭子网）时改做 TCP 连接探测。
+    /// URL 为 `tcp://地址:端口`（Tailnet 子网）时改做 TCP 连接探测。
     public func probe(site: Site, attempts: Int, timeout: TimeInterval) async -> SiteResult {
         var outcomes: [RequestOutcome] = []
         let count = max(attempts, 0)

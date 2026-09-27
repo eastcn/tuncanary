@@ -52,18 +52,18 @@ enum UINotificationMergerTests {
                 t.expectEqual(merged.title, "TunCanary：需关注")
                 t.expectEqual(merged.severity, .warning)
             },
-            TestCase("经去重器脱敏后合并，正文不含内网站点 URL") { t in
+            TestCase("经去重器脱敏后合并，正文不含 VPN 站点 URL") { t in
                 let url = URL(string: "https://intranet.corp.example/health")!
                 var deduper = NotificationDeduper()
                 let pending = deduper.update(with: [
                     Fault(key: .site(SiteCatalog.intranetID), severity: .warning,
-                          message: "内网站点连续三轮访问失败（https://intranet.corp.example/health）"),
+                          message: "VPN 站点连续三轮访问失败（https://intranet.corp.example/health）"),
                     Fault(key: .dnsNotRestored, severity: .critical, message: "主网络 DNS（Wi-Fi）：DNS 为 10.20.0.53"),
                 ], redactor: Redactor(intranetURL: url))
                 let merged = try t.require(NotificationMerger.merge(pending))
                 t.expectNotContains(merged.body, "intranet.corp.example")
                 t.expectNotContains(merged.body, "10.20.0.53")
-                t.expectContains(merged.body, "[内网站点]")
+                t.expectContains(merged.body, "[VPN 站点]")
                 t.expectContains(merged.body, "10.x.x.x")
             },
         ])

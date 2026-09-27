@@ -86,7 +86,7 @@ public enum DNSGuardOutcome: String, Sendable, Equatable, Codable {
 
 /// 事件日志（JSON Lines）中的一条，也用作状态文件中的“最近一次”记录。
 ///
-/// 只记录时间、阶段、结果和原因。原因在写入前已经脱敏，不含内网探针域名、VPN 状态文件原文和代理配置原文。
+/// 只记录时间、阶段、结果和原因。原因在写入前已经脱敏，不含 VPN 探针域名、VPN 状态文件原文和代理配置原文。
 public struct DNSGuardEvent: Sendable, Equatable, Codable {
     public var date: Date
     /// 未进入任何阶段就跳过时为 nil（例如 TUN 未运行）。

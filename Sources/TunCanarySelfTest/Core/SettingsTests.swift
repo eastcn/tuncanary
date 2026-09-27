@@ -34,7 +34,7 @@ enum SettingsTests {
                 t.expect(!settings.isIntranetConfigured)
                 t.expectEqual(AppSettings.default, settings)
             },
-            TestCase("内网站点 URL 校验") { t in
+            TestCase("VPN 站点 URL 校验") { t in
                 func url(_ text: String) -> Result<URL?, SettingsValidationError> { SettingsValidator.validateIntranetURL(text) }
                 t.expectEqual(try url("").get(), nil)
                 t.expectEqual(try url("  ").get(), nil)
@@ -62,8 +62,8 @@ enum SettingsTests {
                 settings.intranetURL = URL(string: "ftp://intranet.corp.example")
                 let errors = SettingsValidator.validate(settings)
                 t.expectEqual(errors, [.intranetURLScheme, .expectedDNSInvalid("x")])
-                t.expectEqual(SettingsValidationError.intranetURLScheme.message, "内网站点 URL 必须是 http 或 https")
-                t.expectEqual(SettingsValidationError.intranetURLMissingHost.message, "内网站点 URL 缺少主机名")
+                t.expectEqual(SettingsValidationError.intranetURLScheme.message, "VPN 站点 URL 必须是 http 或 https")
+                t.expectEqual(SettingsValidationError.intranetURLMissingHost.message, "VPN 站点 URL 缺少主机名")
                 t.expectEqual(SettingsValidationError.expectedDNSEmpty.message, "预期 DNS 至少填写一个 IPv4 地址")
             },
             TestCase("有效预期 DNS 与规则推断") { t in
@@ -159,7 +159,7 @@ enum SettingsTests {
                 t.expect(SettingsValidator.validateSites([duplicate]).contains(.siteGroupInvalid("custom")))
                 duplicate.group = SiteGroup(rawValue: String(repeating: "组", count: 21))
                 t.expect(SettingsValidator.validateSites([duplicate]).contains(.siteGroupInvalid("custom")))
-                duplicate.group = SiteGroup(rawValue: "内网站点")
+                duplicate.group = SiteGroup(rawValue: "VPN 站点")
                 t.expect(SettingsValidator.validateSites([duplicate]).contains(.siteGroupInvalid("custom")))
                 duplicate.group = SiteGroup(rawValue: "东亚\n分组")
                 t.expect(SettingsValidator.validateSites([duplicate]).contains(.siteGroupInvalid("custom")))
@@ -263,7 +263,7 @@ enum DiagnosticsTests {
 
     static var suite: TestSuite {
         TestSuite("Core.Diagnostics", [
-            TestCase("Redactor：内网 IP 只保留首段") { t in
+            TestCase("Redactor：私有 IP 只保留首段") { t in
                 let r = Redactor()
                 t.expectEqual(r.redact("DNS 10.9.0.53, 10.9.0.54"), "DNS 10.x.x.x, 10.x.x.x")
                 t.expectEqual(r.redact("路由器 192.168.0.1。"), "路由器 192.x.x.x。")
@@ -301,7 +301,7 @@ enum DiagnosticsTests {
                 t.expectEqual(r.redact("请求 http://10.1.2.3/ 超时"), "请求 http://10.x.x.x/ 超时")
                 t.expectEqual(r.redact("192 个请求"), "192 个请求")
             },
-            TestCase("Redactor：不输出内网站点 URL（不区分大小写）") { t in
+            TestCase("Redactor：不输出 VPN 站点 URL（不区分大小写）") { t in
                 let r = Redactor(intranetURL: intranetURL)
                 let text = r.redact("探测 https://Intranet.Corp.Example/health 失败；主机 intranet.corp.example 无响应")
                 t.expectNotContains(text.lowercased(), "corp.example")
@@ -333,23 +333,23 @@ enum DiagnosticsTests {
                 t.expectContains(text, "· 保存值：空（DNS 已被清空）")
                 t.expectContains(text, "Google：可达，200 ms；最近 3 次：可达 / 超时 / 可达")
                 t.expectContains(text, "百度：尚未检测")
-                t.expectContains(text, "内网站点：已配置；超时；最近 1 次：超时")
+                t.expectContains(text, "VPN 站点：已配置；超时；最近 1 次：超时")
                 t.expectContains(text, "生效 DNS：192.x.x.x")
                 t.expectNotContains(text.lowercased(), "corp.example")
                 t.expectNotContains(text, "10.231")
                 t.expectNotContains(text, "/Users/")
                 t.expectNotContains(text, "example-tailnet")
                 t.expectNotContains(text, "ts.net")
-                t.expectContains(text, "家庭子网：未配置")
+                t.expectContains(text, "Tailnet 子网：未配置")
             },
-            TestCase("诊断摘要：未配置内网") { t in
+            TestCase("诊断摘要：未配置 VPN 站点") { t in
                 let summary = DiagnosticSummary(
                     generatedAt: F.collectedAt, appVersion: "0.1.0", osVersion: "26.6.2",
                     overall: OverallAssessment(local: nil, connectivityFaults: []), local: nil,
                     sites: DiagnosticSummary.siteEntries(history: SiteHistory()), intranetConfigured: false,
                     intranetSkippedText: "未验证")
                 let text = summary.render(redactor: Redactor())
-                t.expectContains(text, "内网站点：未配置（未验证）")
+                t.expectContains(text, "VPN 站点：未配置（未验证）")
                 t.expectContains(text, "总体状态：未确认")
             },
             TestCase("手动恢复步骤：5 步，带服务名") { t in

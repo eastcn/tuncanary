@@ -64,7 +64,7 @@ public struct SettingsDraft: Sendable, Equatable {
     }
 
     public var intranetURL: String
-    /// 家庭子网目标（IPv4:端口）；留空表示未配置。
+    /// Tailnet 子网目标（IPv4:端口）；留空表示未配置。
     public var tailnetTarget: String
     public var disconnectedDNSRule: DisconnectedDNSRule
     public var expectedDNS: String
@@ -277,7 +277,7 @@ public struct SettingsDraft: Sendable, Equatable {
             if !(1...60).contains(name.count) { errors.name = "名称须为 1–60 个字符" }
             let group = draft.group
             if !group.isValidPublicGroup {
-                errors.group = "分组须为 1–20 个字符，不能使用“内网站点”“家庭子网”或控制字符"
+                errors.group = "分组须为 1–20 个字符，不能使用“VPN 站点”“Tailnet 子网”或控制字符"
             }
             let parsedURL = URL(string: urlText)
             if let parsedURL,

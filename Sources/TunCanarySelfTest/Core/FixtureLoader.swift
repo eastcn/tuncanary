@@ -220,7 +220,7 @@ enum FixtureLoader {
         return copy
     }
 
-    /// 去掉VPN OpenVPN 进程。
+    /// 去掉 VPN OpenVPN 进程。
     static func withoutVPNProcess(_ snapshot: LocalSnapshot) -> LocalSnapshot {
         var copy = snapshot
         let executables = Set(vpnExecutables)

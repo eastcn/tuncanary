@@ -34,7 +34,7 @@ TUNCANARY_LIVE=1 scripts/test.sh System.Live Probe.Live       # 读取本机真�
 TUNCANARY_RENDER_DIR=/tmp/tuncanary-ui scripts/test.sh UI.RenderPreview   # 离屏渲染界面预览 PNG
 ```
 
-实机采集时设置 `TUNCANARY_LIVE_TAILNET_TARGET=地址:端口`，会按这个家庭子网目标评估 Tailnet 卡；目标经 Tailscale 路由时再做一次 TCP 探测。它不读取、也不修改应用设置。
+实机采集时设置 `TUNCANARY_LIVE_TAILNET_TARGET=地址:端口`，会按这个 Tailnet 子网目标评估 Tailnet 卡；目标经 Tailscale 路由时再做一次 TCP 探测。它不读取、也不修改应用设置。
 
 DNS 守护进程的安装脚本可以装到临时根目录，不需要 root，也不调用 `launchctl`：
 

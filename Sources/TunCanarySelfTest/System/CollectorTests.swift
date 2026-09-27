@@ -3,7 +3,7 @@ import Foundation
 import TunCanaryCore
 import TunCanarySystem
 
-/// 各采集器测试：进程识别、接口、SCDynamicStore 映射、文件读取。不读取本机真实的 Clash 配置或VPN 文件。
+/// 各采集器测试：进程识别、接口、SCDynamicStore 映射、文件读取。不读取本机真实的 Clash 配置或 VPN 文件。
 enum CollectorTests {
     static let home = "/Users/tester"
     static let paths = KnownPaths(homeDirectory: home)

@@ -52,7 +52,7 @@ enum ConnectivityTests {
 
             // MARK: 站点表
 
-            TestCase("站点表：9 个公开站点与可选内网") { t in
+            TestCase("站点表：9 个公开站点与可选 VPN 站点") { t in
                 let sites = FixtureLoader.legacySites
                 t.expectEqual(sites.count, 9)
                 t.expectEqual(Set(sites.map(\.id)).count, 9)
@@ -69,7 +69,7 @@ enum ConnectivityTests {
                 t.expectEqual(intranet.group, .intranet)
                 t.expectNotContains(intranet.name, "corp.example")
             },
-            TestCase("内网只在VPN 已连接且已配置时参与") { t in
+            TestCase("VPN 站点只在 VPN 已连接且已配置时参与") { t in
                 t.expectEqual(SiteCatalog.intranetDecision(intranetURL: nil, vpnState: .connected), .notConfigured)
                 t.expectEqual(SiteCatalog.intranetDecision(intranetURL: nil, vpnState: .connected).skippedText, "未验证")
                 t.expectEqual(SiteCatalog.intranetDecision(intranetURL: intranetURL, vpnState: .disconnected), .vpnDisconnected)
@@ -237,7 +237,7 @@ enum ConnectivityTests {
                 tracker.recordRound([fail(SiteCatalog.baidu)], intranetEligible: false)
                 t.expectEqual(tracker.faults.map(\.key), [.group(.mainland)])
             },
-            TestCase("内网站点：连接时连续三轮失败为黄，断开时不计") { t in
+            TestCase("VPN 站点：连接时连续三轮失败为黄，断开时不计") { t in
                 let intranet = SiteCatalog.intranet(url: intranetURL)
                 var tracker = ConnectivityTracker()
                 for _ in 0..<3 { tracker.recordRound([fail(intranet)], intranetEligible: true) }

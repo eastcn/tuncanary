@@ -50,8 +50,8 @@ public struct ConnectivityTracker: Sendable, Equatable {
     }
 
     /// 记录一轮结果（后台轻测，或手动完整检测中关键站点的汇总结果）。
-    /// 只统计关键站点；内网站点仅在 `intranetEligible`（VPN 已连接且已配置）时参与，
-    /// 家庭子网仅在 `tailnetEligible`（目标经 Tailscale 路由）时参与，否则计数清零。
+    /// 只统计关键站点；VPN 站点仅在 `intranetEligible`（VPN 已连接且已配置）时参与，
+    /// Tailnet 子网仅在 `tailnetEligible`（目标经 Tailscale 路由）时参与，否则计数清零。
     /// 本轮未出现的关键站点保持原计数。
     public mutating func recordRound(_ results: [SiteResult], intranetEligible: Bool, tailnetEligible: Bool = false) {
         for result in results where result.site.isKey && result.site.inLightProbe && result.site.isEnabled {
@@ -141,13 +141,13 @@ public struct ConnectivityTracker: Sendable, Equatable {
         if failing.contains(SiteCatalog.intranetID) {
             faults.append(ConnectivityFault(
                 key: .site(SiteCatalog.intranetID), severity: .warning,
-                message: "内网站点\(phrase)", siteIDs: [SiteCatalog.intranetID]))
+                message: "VPN 站点\(phrase)", siteIDs: [SiteCatalog.intranetID]))
         }
-        // 家庭子网经 Tailscale 连续打不通：家里的服务整体不可用，判红。
+        // Tailnet 子网经 Tailscale 连续打不通：家里的服务整体不可用，判红。
         if failing.contains(SiteCatalog.tailnetID) {
             faults.append(ConnectivityFault(
                 key: .site(SiteCatalog.tailnetID), severity: .critical,
-                message: "家庭子网\(phrase)", siteIDs: [SiteCatalog.tailnetID]))
+                message: "Tailnet 子网\(phrase)", siteIDs: [SiteCatalog.tailnetID]))
         }
         return faults
     }
