@@ -14,7 +14,7 @@ let package = Package(
         .library(name: "TunCanaryRuntime", targets: ["TunCanaryRuntime"]),
     ],
     targets: [
-        // 纯逻辑：模型、解析器、判定、汇总、设置、诊断。除设置与 VPN 适配器的读取外不做 I/O。
+        // 纯逻辑：模型、解析器、判定、汇总、设置、诊断。除设置、VPN 适配器与故障事件日志的读写外不做 I/O。
         .target(name: "TunCanaryCore"),
 
         // 系统采集（getifaddrs、SCDynamicStore、proc_*、网络变化监听）。

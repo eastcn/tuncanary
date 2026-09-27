@@ -39,6 +39,8 @@ struct MainPanel: View {
                         SiteGroupView(group: group)
                             .padding(.bottom, 2)
                     }
+                    RecentEventsSection(model: model)
+                        .padding(.top, 8)
                 }
                 .padding(.horizontal, PopoverMetrics.padding)
                 .padding(.vertical, 12)
@@ -139,6 +141,77 @@ struct ActionBar: View {
 }
 
 /// 手动恢复步骤与两个检测页入口。
+/// 最近事件：默认收起；展开后按时间倒序显示最多 10 条。
+struct RecentEventsSection: View {
+    @ObservedObject var model: AppModel
+
+    static let visibleLimit = 10
+
+    private var events: [FaultEvent] {
+        Array(model.recentEvents.suffix(Self.visibleLimit).reversed())
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                model.toggleRecentEvents()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: model.showsRecentEvents ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(.secondary)
+                        .frame(width: 10)
+                    SectionTitle(title: "最近事件",
+                                 trailing: model.recentEvents.isEmpty ? "暂无" : "\(model.recentEvents.count) 条")
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityValue(model.showsRecentEvents ? "已展开" : "已收起")
+
+            if model.showsRecentEvents && !events.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(events.enumerated()), id: \.offset) { index, event in
+                        if index > 0 { Divider().padding(.leading, 10) }
+                        RecentEventRow(event: event,
+                                       time: PopoverFormatter.clockText(event.date, now: model.now(),
+                                                                        timeZone: model.timeZone))
+                    }
+                }
+                .cardBackground(.neutral)
+            }
+        }
+    }
+}
+
+/// 一条事件：状态色点、时间与描述。
+struct RecentEventRow: View {
+    let event: FaultEvent
+    let time: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Circle()
+                .fill(Color(nsColor: StatusPalette.mark(StatusTone(event.displaySeverity))))
+                .frame(width: 7, height: 7)
+                .alignmentGuide(.firstTextBaseline) { $0[.bottom] - 1 }
+            Text(time)
+                .font(.system(size: 11).monospacedDigit())
+                .foregroundColor(.secondary)
+            Text(event.text)
+                .font(.system(size: 11.5))
+                .foregroundColor(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(time)，\(event.displaySeverity.displayName)，\(event.text)")
+    }
+}
+
 struct ToolsSection: View {
     @ObservedObject var model: AppModel
 

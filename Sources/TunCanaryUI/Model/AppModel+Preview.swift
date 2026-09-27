@@ -70,6 +70,8 @@ extension AppModel {
             model.siteHistory = data.history(google: .healthy)
             model.intranetDecision = .vpnDisconnected
             model.expandedCards = [.primaryDNS]
+            model.recentEvents = data.dnsCriticalEvents()
+            model.showsRecentEvents = true
         case .firstLaunch:
             model.intranetDecision = .vpnUnconfirmed
         case .gracePeriod:
@@ -103,6 +105,21 @@ enum PreviewData {
                                       expectedDNS: ["119.29.29.29"],
                                       checkPages: [CheckPage(name: "出口检测", url: URL(string: "https://check.example.test/ip")!),
                                                    CheckPage(name: "DNS 检测", url: URL(string: "https://check.example.test/dns")!)])
+
+    /// 红色场景的最近事件：启动后 Google 短暂失败又消失，随后 DNS 未恢复。
+    static func dnsCriticalEvents() -> [FaultEvent] {
+        let google = "Google 连续两轮访问失败"
+        let dns = "主网络 DNS（Wi-Fi）：VPN 已断开、TUN 运行中，DNS 未恢复为 119.29.29.29"
+        return [
+            FaultEvent(date: now.addingTimeInterval(-7_200), kind: .started),
+            FaultEvent(date: now.addingTimeInterval(-5_400), kind: .appeared, key: .site(SiteCatalog.google.id),
+                       severity: .warning, message: google),
+            FaultEvent(date: now.addingTimeInterval(-5_160), kind: .cleared, key: .site(SiteCatalog.google.id),
+                       severity: .warning, message: google),
+            FaultEvent(date: now.addingTimeInterval(-365), kind: .appeared, key: .dnsNotRestored,
+                       severity: .critical, message: dns),
+        ]
+    }
 
     /// 第 `index` 轮（0 最旧，4 最新）的时间：每 2 分钟一轮轻测。
     static func round(_ index: Int) -> Date {

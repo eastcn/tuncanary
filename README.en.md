@@ -57,7 +57,7 @@ Exit codes: `0` OK, `1` warning, `2` failure, `3` unconfirmed, `64` usage error.
 
 ## Privacy
 
-TunCanary only reads state. It never changes DNS, TUN, proxy or VPN settings. It collects and uploads nothing. Diagnostics, command-line output and notifications are redacted: private IP addresses keep only the first octet, and the intranet URL and home directory are removed.
+TunCanary only reads state. It never changes DNS, TUN, proxy or VPN settings. It collects and uploads nothing. Diagnostics, command-line output and notifications are redacted: private IP addresses keep only the first octet, and the intranet URL and home directory are removed. A redacted log of when faults appeared, changed and cleared (at most 200 entries) is kept locally in `~/Library/Application Support/TunCanary/events.jsonl`; `scripts/uninstall.sh --clear-settings` removes it.
 
 ## License
 

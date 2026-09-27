@@ -3,7 +3,7 @@ import Foundation
 /// 脱敏诊断摘要（“复制脱敏诊断摘要”按钮的内容）。
 ///
 /// 包含：生成时间、应用版本、macOS 版本、总体状态和原因、各状态卡的结论与关键证据、
-/// 各站点的类别、延迟和最近 5 次结果。内网站点只显示“已配置/未配置”。
+/// 各站点的类别、延迟和最近 5 次结果，以及最近的故障事件。内网站点只显示“已配置/未配置”。
 public struct DiagnosticSummary: Sendable {
     /// 一个站点的诊断条目。
     public struct SiteEntry: Sendable, Equatable {
@@ -31,6 +31,8 @@ public struct DiagnosticSummary: Sendable {
     public var intranetConfigured: Bool
     /// 内网站点未探测时的说明（未配置、未连接 VPN 等）。
     public var intranetSkippedText: String?
+    /// 最近的故障事件（旧 → 新）。
+    public var events: [FaultEvent]
 
     public init(
         generatedAt: Date,
@@ -40,7 +42,8 @@ public struct DiagnosticSummary: Sendable {
         local: LocalAssessment?,
         sites: [SiteEntry],
         intranetConfigured: Bool,
-        intranetSkippedText: String? = nil
+        intranetSkippedText: String? = nil,
+        events: [FaultEvent] = []
     ) {
         self.generatedAt = generatedAt
         self.appVersion = appVersion
@@ -50,6 +53,7 @@ public struct DiagnosticSummary: Sendable {
         self.sites = sites
         self.intranetConfigured = intranetConfigured
         self.intranetSkippedText = intranetSkippedText
+        self.events = events
     }
 
     /// 由站点历史构造公开站点条目（内网站点另行传入）。
@@ -108,8 +112,19 @@ public struct DiagnosticSummary: Sendable {
         }
         lines.append(intranet)
 
+        if !events.isEmpty {
+            lines.append("")
+            lines.append("最近事件：")
+            for event in events.suffix(Self.eventLimit) {
+                lines.append("- \(DateText.format(event.date, timeZone: timeZone)) [\(event.displaySeverity.displayName)] \(event.text)")
+            }
+        }
+
         return redactor.redact(lines.joined(separator: "\n"))
     }
+
+    /// 摘要中附带的最近事件条数。
+    public static let eventLimit = 20
 
     /// 站点行：类别、延迟和最近 5 次结果。不包含 URL。
     static func siteLine(_ entry: SiteEntry, includeName: Bool = true) -> String {

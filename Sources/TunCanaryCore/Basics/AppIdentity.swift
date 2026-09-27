@@ -58,6 +58,11 @@ public struct KnownPaths: Sendable, Equatable {
         underHome("Library/Application Support/\(AppIdentity.name)/adapters")
     }
 
+    /// 故障事件日志（JSON Lines）。
+    public var faultEventLogFile: String {
+        underHome("Library/Application Support/\(AppIdentity.name)/events.jsonl")
+    }
+
     /// 把 `~/` 开头的路径展开到 `home` 下；其他路径原样返回。
     public static func expandTilde(_ path: String, home: String) -> String {
         guard path == "~" || path.hasPrefix("~/") else { return path }

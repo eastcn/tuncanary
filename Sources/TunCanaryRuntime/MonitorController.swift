@@ -72,6 +72,9 @@ public final class MonitorController {
     private var grace = GraceTracker()
     private var tracker = ConnectivityTracker()
     private var deduper = NotificationDeduper()
+    private var recorder = FaultEventRecorder()
+    /// 故障事件日志；为 nil 时只在内存中保留最近事件。
+    private let eventStore: FaultEventStore?
 
     public init(model: AppModel,
                 snapshotProvider: LocalSnapshotProviding,
@@ -81,6 +84,7 @@ public final class MonitorController {
                 paths: KnownPaths = .currentUser(),
                 adapters: VPNAdapterSet = VPNAdapterSet(),
                 adapterRegistry: VPNAdapterRegistry? = nil,
+                eventStore: FaultEventStore? = nil,
                 clock: MonitorClock = .live) {
         self.model = model
         self.snapshotProvider = snapshotProvider
@@ -89,6 +93,7 @@ public final class MonitorController {
         self.notifier = notifier
         self.paths = paths
         self.adapterRegistry = adapterRegistry
+        self.eventStore = eventStore
         let initialAdapters = adapterRegistry?.current ?? adapters
         self.evaluator = LocalEvaluator(paths: paths, adapterSet: initialAdapters)
         self.clock = clock
@@ -100,6 +105,9 @@ public final class MonitorController {
         guard !running else { return }
         running = true
         sleeping = false
+        recorder = FaultEventRecorder()
+        if let eventStore { model.recentEvents = eventStore.recent(limit: AppModel.recentEventLimit) }
+        record([FaultEvent(date: clock.now(), kind: .started)])
         observer.start { [weak self] event in
             Task { @MainActor [weak self] in self?.handle(event) }
         }
@@ -370,6 +378,7 @@ public final class MonitorController {
         let faults = inGrace ? [] : tracker.faults(sites: eligibleSites)
         model.apply(local: local, connectivityFaults: faults, checkedAt: clock.now())
         guard !inGrace else { return }
+        record(recorder.update(with: model.overall.faults, at: clock.now(), redactor: model.redactor))
         let pending = deduper.update(with: model.overall.faults, redactor: model.redactor)
         if settings.notificationsEnabled,
            let notification = NotificationMerger.merge(pending),
@@ -377,6 +386,13 @@ public final class MonitorController {
            isCurrent(version) {
             await notifier.deliver(notification)
         }
+    }
+
+    /// 写入事件日志，并更新界面上的最近事件。
+    private func record(_ events: [FaultEvent]) {
+        guard !events.isEmpty else { return }
+        eventStore?.append(events)
+        model.recentEvents = Array((model.recentEvents + events).suffix(AppModel.recentEventLimit))
     }
 
     private func isCurrent(_ version: Int) -> Bool {

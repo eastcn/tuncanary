@@ -21,6 +21,7 @@ enum CoreSuites {
             ConnectivityTests.suite,
             SummaryTests.suite,
             NotificationTests.suite,
+            FaultEventTests.suite,
             GraceTests.suite,
             CLITests.suite,
             SettingsTests.suite,

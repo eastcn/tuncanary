@@ -22,6 +22,10 @@ public final class AppModel: ObservableObject {
     @Published public var checkProgress: CheckProgress?
     /// 宽限期结束时间；不在宽限期内为 nil。
     @Published public var graceEndsAt: Date?
+    /// 最近的故障事件（旧 → 新），最多 `recentEventLimit` 条。
+    @Published public var recentEvents: [FaultEvent] = []
+    /// 内存中保留、诊断摘要附带的最近事件条数。
+    public static let recentEventLimit = 20
 
     /// 按需出口检测，仅存内存，不参与总体健康判断或诊断导出。
     @Published public internal(set) var egressResults: [EgressIPResult] = []
@@ -50,6 +54,8 @@ public final class AppModel: ObservableObject {
     @Published public var route: PopoverRoute
     /// 已展开证据的状态卡。
     @Published public var expandedCards: Set<StatusCardKind>
+    /// “最近事件”区块是否展开。
+    @Published public var showsRecentEvents = false
     /// 设置页草稿。
     @Published public var settingsDraft: SettingsDraft
     /// 刚复制的内容（用于短暂显示“已复制”）：`diagnostics` 或 `command`。
@@ -199,6 +205,10 @@ public final class AppModel: ObservableObject {
         actions.reloadAdapters()
     }
 
+    public func toggleRecentEvents() {
+        showsRecentEvents.toggle()
+    }
+
     public func openRecovery() {
         route = .recovery
     }
@@ -311,7 +321,8 @@ public final class AppModel: ObservableObject {
             local: local,
             sites: entries,
             intranetConfigured: settings.isIntranetConfigured,
-            intranetSkippedText: intranetDecision.skippedText)
+            intranetSkippedText: intranetDecision.skippedText,
+            events: recentEvents)
     }
 
     /// 默认的诊断摘要文本：应用版本取 Info.plist（不在应用包内运行时取 `AppIdentity.version`），

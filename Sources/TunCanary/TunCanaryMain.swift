@@ -105,7 +105,8 @@ private final class PulseAppDelegate: NSObject, NSApplicationDelegate {
         let monitor = MonitorController(model: model,
                                         snapshotProvider: SystemSnapshotProvider(configuration: snapshotConfiguration),
                                         prober: URLSessionSiteProber(), observer: SystemNetworkChangeObserver(),
-                                        notifier: notifier, paths: paths, adapterRegistry: adapterRegistry)
+                                        notifier: notifier, paths: paths, adapterRegistry: adapterRegistry,
+                                        eventStore: FaultEventStore(paths: paths))
         self.monitor = monitor
         model.actions = AppActions.live(settingsStore: store, notifier: notifier, loginItem: loginItem,
                                          recheck: { [weak monitor] in monitor?.recheck() },

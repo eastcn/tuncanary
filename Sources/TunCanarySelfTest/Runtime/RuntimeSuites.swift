@@ -240,6 +240,43 @@ enum RuntimeSuites {
                 t.expectEqual(cleared, VPNAdapterSet())
                 await rig.stop()
             },
+            TestCase("故障事件：启动与出现写入日志，宽限期内不记录") { t in
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("np-runtime-events-\(UUID().uuidString).jsonl")
+                defer { try? FileManager.default.removeItem(at: url) }
+                let store = FaultEventStore(fileURL: url)
+                let earlier = FaultEvent(date: Date(timeIntervalSince1970: 1_790_000_000), kind: .started)
+                store.append([earlier])
+
+                let rig = try await RuntimeRig(category: .timeout, eventStore: store)
+                await rig.start()
+                let initial = await rig.model.recentEvents.map(\.kind)
+                t.expectEqual(initial, [.started, .started], "启动时载入已有事件，再记录本次启动")
+
+                try await waitUntil { await rig.prober.count == 3 }
+                await rig.clock.advance(120)
+                try await waitUntil { await rig.model.overall.faultKeys.contains(.group(.mainland)) }
+                try await waitUntil { await rig.model.checkProgress == nil }
+                let afterFault = await rig.model.recentEvents
+                t.expect(afterFault.contains { $0.kind == .appeared && $0.key == .group(.mainland) })
+                t.expectEqual(store.recent().count, afterFault.count, "界面与日志一致")
+
+                rig.observer.emit(.network)
+                try await waitUntil { await rig.model.local?.isInGracePeriod == true }
+                let beforeGrace = await rig.model.recentEvents.count
+                await rig.clock.advance(9)
+                for _ in 0..<20 { await Task.yield() }
+                let duringGrace = await rig.model.recentEvents.count
+                t.expectEqual(duringGrace, beforeGrace)
+
+                // 宽限结束后计数清零，连通性故障消失。
+                await rig.prober.setCategory(.reachable)
+                await rig.clock.advance(1)
+                try await waitUntil {
+                    await rig.model.recentEvents.contains { $0.kind == .cleared && $0.key == .group(.mainland) }
+                }
+                await rig.stop()
+            },
         ])
     }
 
@@ -430,7 +467,8 @@ final class RuntimeRig {
     let controller: MonitorController
 
     init(category: ProbeCategory = .reachable, settings: AppSettings = FixtureLoader.legacySettings,
-         scenario: FixtureLoader.Scenario = .a, adapterRegistry: VPNAdapterRegistry? = nil) async throws {
+         scenario: FixtureLoader.Scenario = .a, adapterRegistry: VPNAdapterRegistry? = nil,
+         eventStore: FaultEventStore? = nil) async throws {
         let snapshot = try FixtureLoader.snapshot(scenario)
         provider = RuntimeSnapshotStub(snapshot)
         prober = RuntimeProberStub(category: category)
@@ -439,6 +477,7 @@ final class RuntimeRig {
                                        observer: observer, notifier: notifier, paths: FixtureLoader.paths,
                                        adapters: FixtureLoader.adapterSet,
                                        adapterRegistry: adapterRegistry,
+                                       eventStore: eventStore,
                                        clock: clock.monitorClock())
     }
     func start() { controller.start() }

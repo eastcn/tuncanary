@@ -1,6 +1,6 @@
 import Foundation
 
-/// 设置读写。Core 中唯一做 I/O 的类型。
+/// 设置读写。Core 中少数做 I/O 的类型之一（另见 `VPNAdapterStore`、`FaultEventStore`）。
 ///
 /// 应用与命令行都运行在 bundle id 为 `AppIdentity.bundleID` 的包内，此时系统不允许把自身
 /// bundle id 当作 suite 名，所以直接使用 `.standard`（二者是同一个域）；在包外（如 `swift run`）
