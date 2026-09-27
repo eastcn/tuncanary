@@ -117,6 +117,8 @@ enum DNSGuardTests {
                               ["守护进程已启用连接期接管，建议把“VPN 连接时”设为“由代理接管（与断开时相同）”"])
                 t.expectEqual(try notices(AppSettings(expectedDNS: target, connectedDNSRule: .proxyTakeover),
                                           takeover: true), [])
+                t.expectEqual(try notices(AppSettings(expectedDNS: target, connectedDNSRule: .proxyTakeover)),
+                              ["守护进程未启用连接期接管，VPN 连接期间不会改写 DNS"])
             },
             TestCase("摘要：配置不可读、退避和停用连接期接管") { t in
                 let settings = AppSettings(expectedDNS: target)

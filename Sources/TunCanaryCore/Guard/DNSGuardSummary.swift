@@ -118,6 +118,9 @@ public struct DNSGuardSummary: Sendable, Equatable {
         if config.connectedTakeoverEnabled && settings.connectedDNSRule != .proxyTakeover {
             notices.append("守护进程已启用连接期接管，建议把“VPN 连接时”设为“\(ConnectedDNSRule.proxyTakeover.displayName)”")
         }
+        if !config.connectedTakeoverEnabled && settings.connectedDNSRule == .proxyTakeover {
+            notices.append("守护进程未启用连接期接管，VPN 连接期间不会改写 DNS")
+        }
         return notices
     }
 }
