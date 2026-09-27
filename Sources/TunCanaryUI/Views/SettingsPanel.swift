@@ -39,6 +39,7 @@ struct SettingsPanel: View {
                         text: $model.settingsDraft.lightProbeInterval,
                         caption: "默认 120 秒；可设置 15–86400 秒。检测未结束时会合并触发，避免重叠请求。",
                         error: validation.lightProbeIntervalError)
+                    VPNAdaptersSection(model: model)
                     PublicSitesSettingsSection(model: model, validation: validation)
                     CheckPagesSection(model: model, validation: validation)
                     NotificationSettingsSection(model: model)
@@ -201,6 +202,36 @@ struct DNSRulesSection: View {
             .toggleStyle(.switch)
             .controlSize(.small)
             .disabled(model.settingsDraft.disconnectedDNSRule != .equals)
+        }
+    }
+}
+
+/// VPN 适配器：显示已加载的适配器和无效文件，可以立即重新读取目录（不随“保存”）。
+struct VPNAdaptersSection: View {
+    @ObservedObject var model: AppModel
+
+    private var loadedText: String {
+        let adapters = model.adapterSet.adapters
+        guard !adapters.isEmpty else { return "未加载适配器。" }
+        return "已加载 \(adapters.count) 个：\(adapters.map(\.name).joined(separator: "、"))。"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            SettingsHeading(title: "VPN 适配器")
+            Text("\(loadedText)修改适配器目录中的文件后，约一个本机检查间隔内自动生效。")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            ForEach(Array(model.adapterSet.problems.enumerated()), id: \.offset) { _, problem in
+                Label(problem, systemImage: "exclamationmark.circle.fill")
+                    .font(.system(size: 11.5))
+                    .foregroundColor(StatusTone.warning.textColor)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button("立即重新加载") { model.reloadAdapters() }
+                .buttonStyle(PillButtonStyle(compact: true))
+                .help("重新读取适配器目录，并立即做一次本机检查。")
         }
     }
 }

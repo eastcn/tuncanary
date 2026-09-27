@@ -6,7 +6,7 @@ SwiftPM 工程，`swift-tools-version:5.10`，平台 macOS 13，没有第三方�
 
 | 模块 | 内容 |
 | --- | --- |
-| `TunCanaryCore` | 纯逻辑：数据模型、解析器、判定引擎、VPN 适配器、连通性规则、通知去重、`--check` 判定、设置、脱敏和诊断摘要。除 `SettingsStore` 和 `VPNAdapterStore` 外不做 I/O |
+| `TunCanaryCore` | 纯逻辑：数据模型、解析器、判定引擎、VPN 适配器、连通性规则、通知去重、`--check` 判定、设置、脱敏和诊断摘要。除 `SettingsStore`、`VPNAdapterStore` 和 `VPNAdapterRegistry` 外不做 I/O |
 | `TunCanarySystem` | 系统采集：进程、网络接口、路由、SCDynamicStore、代理配置、VPN 状态文件、代理 DNS 查询、系统解析探针，以及网络变化与睡眠唤醒的监听 |
 | `TunCanaryProbe` | 站点探测、完整检测的并发控制、`--check` 流程编排和出口检测 |
 | `TunCanaryUI` | 菜单栏图标、弹窗、设置、通知和登录项 |

@@ -201,6 +201,48 @@ enum VPNTests {
                 ])
                 t.expectEqual(VPNAdapterStore(directory: dir.appendingPathComponent("missing").path).load(), VPNAdapterSet())
             },
+            TestCase("目录指纹：增、删、改名、原地改写都会触发重新加载") { t in
+                let parent = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("np-adapters-\(UUID().uuidString)", isDirectory: true)
+                let dir = parent.appendingPathComponent("adapters", isDirectory: true)
+                defer { try? FileManager.default.removeItem(at: parent) }
+                let registry = VPNAdapterRegistry(store: VPNAdapterStore(directory: dir.path))
+                t.expectEqual(registry.current, VPNAdapterSet())
+                t.expectNil(registry.reloadIfChanged(), "目录不存在且没有变化")
+
+                // 目录原本不存在，之后创建并写入。
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                let encoder = JSONEncoder()
+                let exampleFile = dir.appendingPathComponent("a-example.json")
+                try encoder.encode(example).write(to: exampleFile)
+                t.expectEqual(registry.reloadIfChanged()?.adapters.map(\.id), ["example"])
+                t.expectNil(registry.reloadIfChanged(), "没有变化时不重新加载")
+
+                // 新增文件；非 .json 文件不影响指纹。
+                try encoder.encode(other).write(to: dir.appendingPathComponent("b-other.json"))
+                t.expectEqual(registry.reloadIfChanged()?.adapters.map(\.id), ["example", "other"])
+                try Data("ignored".utf8).write(to: dir.appendingPathComponent("notes.txt"))
+                t.expectNil(registry.reloadIfChanged())
+
+                // 原地改写（同一个 inode）。
+                var renamed = example
+                renamed.name = "Example VPN 2"
+                let handle = try FileHandle(forWritingTo: exampleFile)
+                try handle.truncate(atOffset: 0)
+                try handle.write(contentsOf: try encoder.encode(renamed))
+                try handle.close()
+                t.expectEqual(registry.reloadIfChanged()?.adapters.map(\.name), ["Example VPN 2", "Other VPN"])
+
+                // 改名影响排序；删除后不再加载。
+                try FileManager.default.moveItem(at: exampleFile, to: dir.appendingPathComponent("c-example.json"))
+                t.expectEqual(registry.reloadIfChanged()?.adapters.map(\.id), ["other", "example"])
+                try FileManager.default.removeItem(at: dir.appendingPathComponent("b-other.json"))
+                t.expectEqual(registry.reloadIfChanged()?.adapters.map(\.id), ["example"])
+                t.expectEqual(registry.current.adapters.map(\.id), ["example"])
+
+                // 强制重新加载不比对指纹。
+                t.expectEqual(registry.reload().adapters.map(\.id), ["example"])
+            },
         ])
     }
 }

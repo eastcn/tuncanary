@@ -202,6 +202,44 @@ enum RuntimeSuites {
                 t.expect(afterWake > duringSleep)
                 await rig.stop()
             },
+            TestCase("适配器目录变化后下一轮使用新配置；手动重新加载立即生效") { t in
+                let dir = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("np-runtime-adapters-\(UUID().uuidString)", isDirectory: true)
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: dir) }
+                let registry = VPNAdapterRegistry(store: VPNAdapterStore(directory: dir.path))
+                let rig = try await RuntimeRig(scenario: .b, adapterRegistry: registry)
+                await rig.start()
+                try await waitUntil {
+                    let idle = await rig.model.checkProgress == nil
+                    let evaluated = await rig.model.local != nil
+                    return idle && evaluated
+                }
+                let before = await rig.model.local?.vpnState
+                t.expect(before != .connected, "没有适配器时不应识别出 VPN 已连接")
+                let emptySet = await rig.model.adapterSet
+                t.expectEqual(emptySet, VPNAdapterSet())
+
+                let file = dir.appendingPathComponent("example.json")
+                try JSONEncoder().encode(FixtureLoader.vpnAdapter).write(to: file)
+                try await waitUntil { await rig.clock.hasSleeper(after: 20) }
+                await rig.clock.advance(20)
+                try await waitUntil { await rig.model.local?.vpnState == .connected }
+                let loaded = await rig.model.adapterSet.adapters.map(\.id)
+                t.expectEqual(loaded, [FixtureLoader.vpnAdapter.id])
+
+                try FileManager.default.removeItem(at: file)
+                let collected = await rig.provider.count
+                await rig.controller.reloadAdapters()
+                try await waitUntil {
+                    let state = await rig.model.local?.vpnState
+                    let count = await rig.provider.count
+                    return count > collected && state != .connected
+                }
+                let cleared = await rig.model.adapterSet
+                t.expectEqual(cleared, VPNAdapterSet())
+                await rig.stop()
+            },
         ])
     }
 
@@ -392,7 +430,7 @@ final class RuntimeRig {
     let controller: MonitorController
 
     init(category: ProbeCategory = .reachable, settings: AppSettings = FixtureLoader.legacySettings,
-         scenario: FixtureLoader.Scenario = .a) async throws {
+         scenario: FixtureLoader.Scenario = .a, adapterRegistry: VPNAdapterRegistry? = nil) async throws {
         let snapshot = try FixtureLoader.snapshot(scenario)
         provider = RuntimeSnapshotStub(snapshot)
         prober = RuntimeProberStub(category: category)
@@ -400,6 +438,7 @@ final class RuntimeRig {
         controller = MonitorController(model: model, snapshotProvider: provider, prober: prober,
                                        observer: observer, notifier: notifier, paths: FixtureLoader.paths,
                                        adapters: FixtureLoader.adapterSet,
+                                       adapterRegistry: adapterRegistry,
                                        clock: clock.monitorClock())
     }
     func start() { controller.start() }

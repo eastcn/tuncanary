@@ -7,6 +7,8 @@ import TunCanaryCore
 public struct AppActions {
     /// 立即复测：执行一次本机检查和全部站点的完整检测。进行中时界面不会调用。
     public var recheck: @MainActor () -> Void
+    /// 立即重新读取 VPN 适配器目录，并做一次本机检查。
+    public var reloadAdapters: @MainActor () -> Void
     /// 保存设置（已通过 `SettingsValidator` 校验）。实现方负责持久化并按新设置复查。
     public var saveSettings: @MainActor (AppSettings) -> Void
     /// 开关登录时启动，返回操作后的系统实际状态；失败时抛错（错误信息会显示在设置页）。
@@ -34,6 +36,7 @@ public struct AppActions {
 
     public init(
         recheck: @escaping @MainActor () -> Void = {},
+        reloadAdapters: @escaping @MainActor () -> Void = {},
         saveSettings: @escaping @MainActor (AppSettings) -> Void = { _ in },
         setLoginItemEnabled: @escaping @MainActor (Bool) throws -> LoginItemStatus = { _ in .unavailable },
         loginItemStatus: @escaping @MainActor () -> LoginItemStatus = { .unavailable },
@@ -48,6 +51,7 @@ public struct AppActions {
         quit: @escaping @MainActor () -> Void = {}
     ) {
         self.recheck = recheck
+        self.reloadAdapters = reloadAdapters
         self.saveSettings = saveSettings
         self.setLoginItemEnabled = setLoginItemEnabled
         self.loginItemStatus = loginItemStatus
@@ -62,7 +66,7 @@ public struct AppActions {
         self.quit = quit
     }
 
-    /// 实际运行时的动作。`recheck` 与 `settingsDidChange` 由调度器提供。
+    /// 实际运行时的动作。`recheck`、`reloadAdapters` 与 `settingsDidChange` 由调度器提供。
     ///
     /// - saveSettings：写入 `settingsStore`，再调用 `settingsDidChange`。
     /// - 登录项：委托给 `loginItem`（SMAppService.mainApp）。
@@ -74,10 +78,12 @@ public struct AppActions {
         notifier: UserNotifying,
         loginItem: LoginItemControlling,
         recheck: @escaping @MainActor () -> Void,
+        reloadAdapters: @escaping @MainActor () -> Void = {},
         settingsDidChange: @escaping @MainActor (AppSettings) -> Void = { _ in }
     ) -> AppActions {
         AppActions(
             recheck: recheck,
+            reloadAdapters: reloadAdapters,
             saveSettings: { settings in
                 settingsStore.save(settings)
                 settingsDidChange(settings)

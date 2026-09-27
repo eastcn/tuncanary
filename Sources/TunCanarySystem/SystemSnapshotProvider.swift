@@ -33,8 +33,8 @@ public struct SnapshotCollectionReport: Sendable {
 public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
     public struct Configuration: Sendable {
         public var paths: KnownPaths
-        /// VPN 适配器配置：决定匹配哪些进程、读取哪些状态文件。
-        public var adapters: [VPNAdapterConfig]
+        /// VPN 适配器配置：决定匹配哪些进程、读取哪些状态文件。每轮采集开始时取一次（配置可能在运行中重新加载）。
+        public var adapters: @Sendable () -> [VPNAdapterConfig]
         /// 每轮采集开始时取当前的代理来源（设置可能在运行中改变）。
         public var proxySource: @Sendable () -> ProxySource
         /// 只读命令超时（秒）。
@@ -62,7 +62,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
             probesMihomoDNS: Bool = true
         ) {
             self.paths = paths
-            self.adapters = adapters
+            self.adapters = { adapters }
             self.proxySource = proxySource
             self.commandTimeout = commandTimeout
             self.mihomoDNSTimeout = mihomoDNSTimeout
@@ -80,7 +80,6 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
 
     public let configuration: Configuration
     private let now: @Sendable () -> Date
-    private let matcher: RelevantProcessMatcher
     private let runner: CommandRunner
     private let canary: SystemResolverCanary
 
@@ -90,7 +89,6 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
     public init(configuration: Configuration = Configuration(), now: @escaping @Sendable () -> Date = { Date() }) {
         self.configuration = configuration
         self.now = now
-        self.matcher = RelevantProcessMatcher(paths: configuration.paths, adapters: configuration.adapters)
         self.runner = CommandRunner()
         self.canary = SystemResolverCanary(timeout: configuration.canaryTimeout)
     }
@@ -110,7 +108,8 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
         let collectedAt = now()
         let started = Monotonic.now()
         let config = configuration
-        let matcher = self.matcher
+        let adapters = config.adapters()
+        let matcher = RelevantProcessMatcher(paths: config.paths, adapters: adapters)
         let runner = self.runner
         let source = config.proxySource()
         let coreName = source.client == .manual ? ClashConfig.manual(source.manual).coreProcessName : nil
@@ -123,7 +122,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
         async let routeTask = Blocking.timed { Self.collectRoutes(runner, timeout: config.commandTimeout) }
         async let resolverTask = Blocking.timed { Self.collectResolvers(runner, timeout: config.commandTimeout) }
         async let storeTask = Blocking.timed { DynamicStoreReader().read() }
-        async let statusTask = Blocking.timed { Self.collectVPNStatusFiles(config) }
+        async let statusTask = Blocking.timed { Self.collectVPNStatusFiles(adapters, paths: config.paths) }
         async let canaryTask = resolveCanary(host: source.canaryHost)
 
         // Mihomo DNS 依赖配置中的端口，读完配置后立即发起，与其余各项并行。
@@ -196,11 +195,11 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
     }
 
     /// 读取配置了状态文件的各适配器，键为适配器 ID。
-    static func collectVPNStatusFiles(_ config: Configuration) -> [String: VPNStatusFileState] {
+    static func collectVPNStatusFiles(_ adapters: [VPNAdapterConfig], paths: KnownPaths) -> [String: VPNStatusFileState] {
         var result: [String: VPNStatusFileState] = [:]
-        for adapter in config.adapters {
+        for adapter in adapters {
             guard let fields = adapter.statusFile,
-                  let path = adapter.statusFilePath(home: config.paths.homeDirectory) else { continue }
+                  let path = adapter.statusFilePath(home: paths.homeDirectory) else { continue }
             result[adapter.id] = VPNStatusFileReader(path: path, fields: fields).read()
         }
         return result

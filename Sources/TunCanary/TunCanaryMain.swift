@@ -97,16 +97,19 @@ private final class PulseAppDelegate: NSObject, NSApplicationDelegate {
         let notifier = UserNotificationCenterNotifier()
         let loginItem = MainAppLoginItemController()
         let paths = KnownPaths.currentUser()
-        let adapters = VPNAdapterStore(paths: paths).load()
+        // 适配器目录变化后，调度器在下一轮检查前重新加载；采集与判定读取同一个 registry。
+        let adapterRegistry = VPNAdapterRegistry(store: VPNAdapterStore(paths: paths))
+        var snapshotConfiguration = SystemSnapshotProvider.Configuration(
+            paths: paths, proxySource: { SettingsStore().load().proxySource })
+        snapshotConfiguration.adapters = { adapterRegistry.current.adapters }
         let monitor = MonitorController(model: model,
-                                        snapshotProvider: SystemSnapshotProvider(
-                                            paths: paths, adapters: adapters.adapters,
-                                            proxySource: { SettingsStore().load().proxySource }),
+                                        snapshotProvider: SystemSnapshotProvider(configuration: snapshotConfiguration),
                                         prober: URLSessionSiteProber(), observer: SystemNetworkChangeObserver(),
-                                        notifier: notifier, paths: paths, adapters: adapters)
+                                        notifier: notifier, paths: paths, adapterRegistry: adapterRegistry)
         self.monitor = monitor
         model.actions = AppActions.live(settingsStore: store, notifier: notifier, loginItem: loginItem,
                                          recheck: { [weak monitor] in monitor?.recheck() },
+                                         reloadAdapters: { [weak monitor] in monitor?.reloadAdapters() },
                                          settingsDidChange: { [weak monitor] in monitor?.settingsDidChange($0) })
         let statusController = StatusItemController(model: model)
         self.statusController = statusController

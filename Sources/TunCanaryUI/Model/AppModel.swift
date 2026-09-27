@@ -42,6 +42,8 @@ public final class AppModel: ObservableObject {
     @Published public var loginItemStatus: LoginItemStatus
     /// 最近一次开关登录项失败的原因。
     @Published public var loginItemError: String?
+    /// 当前加载的 VPN 适配器与无效配置说明（由调度器写入）。
+    @Published public var adapterSet = VPNAdapterSet()
 
     // MARK: 界面状态
 
@@ -190,6 +192,11 @@ public final class AppModel: ObservableObject {
 
     public func showMain() {
         route = .main
+    }
+
+    /// 立即重新读取 VPN 适配器目录（不随“保存”）。
+    public func reloadAdapters() {
+        actions.reloadAdapters()
     }
 
     public func openRecovery() {

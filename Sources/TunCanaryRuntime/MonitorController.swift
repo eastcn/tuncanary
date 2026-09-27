@@ -51,7 +51,10 @@ public final class MonitorController {
     private let prober: SiteProbing
     private let observer: NetworkChangeObserving
     private let notifier: UserNotifying
-    private let evaluator: LocalEvaluator
+    private var evaluator: LocalEvaluator
+    private let paths: KnownPaths
+    /// 菜单栏应用中的适配器集合；为 nil 时始终使用初始化时传入的 `adapters`。
+    private let adapterRegistry: VPNAdapterRegistry?
     private let clock: MonitorClock
     private var activeSettings: AppSettings
 
@@ -77,14 +80,19 @@ public final class MonitorController {
                 notifier: UserNotifying,
                 paths: KnownPaths = .currentUser(),
                 adapters: VPNAdapterSet = VPNAdapterSet(),
+                adapterRegistry: VPNAdapterRegistry? = nil,
                 clock: MonitorClock = .live) {
         self.model = model
         self.snapshotProvider = snapshotProvider
         self.prober = prober
         self.observer = observer
         self.notifier = notifier
-        self.evaluator = LocalEvaluator(paths: paths, adapterSet: adapters)
+        self.paths = paths
+        self.adapterRegistry = adapterRegistry
+        let initialAdapters = adapterRegistry?.current ?? adapters
+        self.evaluator = LocalEvaluator(paths: paths, adapterSet: initialAdapters)
         self.clock = clock
+        model.adapterSet = initialAdapters
         self.activeSettings = model.settings
     }
 
@@ -131,6 +139,24 @@ public final class MonitorController {
     public func recheck() {
         resumeFromSleep()
         enqueue(.full)
+    }
+
+    /// 界面“重新加载 VPN 适配器”：不比对目录指纹，强制重新读取，并立即做一次本机检查。
+    public func reloadAdapters() {
+        guard let adapterRegistry else { return }
+        applyAdapters(adapterRegistry.reload())
+        resumeFromSleep()
+        generation += 1
+        activeTask?.cancel()
+        queuedCheck = nil
+        model.checkProgress = nil
+        progressRunToken = nil
+        enqueue(.local)
+    }
+
+    private func applyAdapters(_ adapters: VPNAdapterSet) {
+        evaluator = LocalEvaluator(paths: paths, adapterSet: adapters)
+        model.adapterSet = adapters
     }
 
     /// 设置保存后复查；版本递增使旧设置下完成的结果失效。
@@ -299,6 +325,10 @@ public final class MonitorController {
         }
         guard isCurrent(version) else { return }
         model.checkProgress = CheckProgress(kind: kind.progressKind)
+        // 适配器目录有变化时重新加载；采集读取同一个 registry，本轮即使用新配置。
+        if let reloaded = adapterRegistry?.reloadIfChanged() {
+            applyAdapters(reloaded)
+        }
         let settings = model.settings
         let snapshot = await snapshotProvider.collectSnapshot()
         guard isCurrent(version) else { return }
