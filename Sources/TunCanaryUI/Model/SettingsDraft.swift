@@ -64,6 +64,8 @@ public struct SettingsDraft: Sendable, Equatable {
     }
 
     public var intranetURL: String
+    /// 家庭子网目标（IPv4:端口）；留空表示未配置。
+    public var tailnetTarget: String
     public var disconnectedDNSRule: DisconnectedDNSRule
     public var expectedDNS: String
     public var connectedDNSRule: ConnectedDNSRule
@@ -96,9 +98,11 @@ public struct SettingsDraft: Sendable, Equatable {
         notificationsEnabled: Bool,
         localCheckInterval: String = "20",
         lightProbeInterval: String = "120",
-        sites: [SiteDraft] = SiteCatalog.defaultSites.map(SiteDraft.init(site:))
+        sites: [SiteDraft] = SiteCatalog.defaultSites.map(SiteDraft.init(site:)),
+        tailnetTarget: String = ""
     ) {
         self.intranetURL = intranetURL
+        self.tailnetTarget = tailnetTarget
         self.disconnectedDNSRule = disconnectedDNSRule ?? AppSettings.inferredRule(DNSList.split(expectedDNS))
         self.expectedDNS = expectedDNS
         self.connectedDNSRule = connectedDNSRule
@@ -132,7 +136,8 @@ public struct SettingsDraft: Sendable, Equatable {
             notificationsEnabled: settings.notificationsEnabled,
             localCheckInterval: Self.intervalText(settings.localCheckInterval),
             lightProbeInterval: Self.intervalText(settings.lightProbeInterval),
-            sites: settings.sites.map(SiteDraft.init(site:)))
+            sites: settings.sites.map(SiteDraft.init(site:)),
+            tailnetTarget: settings.tailnetTarget?.description ?? "")
     }
 
     private static func intervalText(_ value: TimeInterval) -> String {
@@ -170,6 +175,7 @@ public struct SettingsDraft: Sendable, Equatable {
     /// 校验结果：每个字段的错误信息，以及全部通过时的设置。
     public struct Validation: Sendable, Equatable {
         public var intranetURLError: String?
+        public var tailnetTargetError: String?
         public var expectedDNSError: String?
         public var manualFakeIPRangeError: String?
         public var manualDNSPortError: String?
@@ -195,6 +201,11 @@ public struct SettingsDraft: Sendable, Equatable {
         switch SettingsValidator.validateIntranetURL(intranetURL) {
         case .success(let value): url = value
         case .failure(let error): validation.intranetURLError = error.message
+        }
+        var tailnet: TailnetTarget?
+        switch SettingsValidator.validateTailnetTarget(tailnetTarget) {
+        case .success(let value): tailnet = value
+        case .failure(let error): validation.tailnetTargetError = error.message
         }
         // 只有“指定地址”要求填写；其他规则下已填写的地址仍须合法，以便切回时保留。
         if disconnectedDNSRule == .equals || !DNSList.split(expectedDNS).isEmpty {
@@ -258,15 +269,15 @@ public struct SettingsDraft: Sendable, Equatable {
             let id = draft.siteID.trimmingCharacters(in: .whitespacesAndNewlines)
             let name = draft.name.trimmingCharacters(in: .whitespacesAndNewlines)
             let urlText = draft.url.trimmingCharacters(in: .whitespacesAndNewlines)
-            if id.isEmpty || id == SiteCatalog.intranetID {
-                errors.id = "ID 不能为空，且不能使用 intranet"
+            if id.isEmpty || id == SiteCatalog.intranetID || id == SiteCatalog.tailnetID {
+                errors.id = "ID 不能为空，且不能使用 intranet 或 tailnet"
             } else if !seenIDs.insert(id).inserted {
                 errors.id = "站点 ID 不能重复"
             }
             if !(1...60).contains(name.count) { errors.name = "名称须为 1–60 个字符" }
             let group = draft.group
             if !group.isValidPublicGroup {
-                errors.group = "分组须为 1–20 个字符，不能使用“内网站点”或控制字符"
+                errors.group = "分组须为 1–20 个字符，不能使用“内网站点”“家庭子网”或控制字符"
             }
             let parsedURL = URL(string: urlText)
             if let parsedURL,
@@ -285,7 +296,8 @@ public struct SettingsDraft: Sendable, Equatable {
             if !errors.isEmpty { validation.siteErrors[index] = errors }
         }
 
-        if validation.intranetURLError == nil && validation.expectedDNSError == nil &&
+        if validation.intranetURLError == nil && validation.tailnetTargetError == nil &&
+           validation.expectedDNSError == nil &&
            (proxyClient != .manual || manualErrors.isEmpty) && validation.canaryHostError == nil &&
            validation.checkPageErrors.isEmpty && checkPages.count <= AppSettings.maxCheckPages &&
            localError == nil && lightError == nil &&
@@ -305,7 +317,8 @@ public struct SettingsDraft: Sendable, Equatable {
                 notificationsEnabled: notificationsEnabled,
                 localCheckInterval: TimeInterval(localInterval),
                 lightProbeInterval: TimeInterval(lightInterval),
-                sites: checkedSites)
+                sites: checkedSites,
+                tailnetTarget: tailnet)
         }
         return validation
     }

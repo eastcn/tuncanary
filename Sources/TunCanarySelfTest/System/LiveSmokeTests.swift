@@ -1,5 +1,6 @@
 import Foundation
 import TunCanaryCore
+import TunCanaryProbe
 import TunCanarySystem
 
 /// 实机冒烟：采集真实快照，只断言结构合理；评估结果只打印不断言（用户可能随时切换 VPN）。
@@ -45,9 +46,12 @@ enum LiveSmokeTests {
                 }
                 if case .notTested = snapshot.canary { t.fail("系统解析 canary 应已执行") }
 
-                // 评估并打印（不断言颜色）
+                // 评估并打印（不断言颜色）。设置 TUNCANARY_LIVE_TAILNET_TARGET=地址:端口 时按该家庭子网目标评估。
+                var settings = AppSettings()
+                settings.tailnetTarget = ProcessInfo.processInfo.environment["TUNCANARY_LIVE_TAILNET_TARGET"]
+                    .flatMap(TailnetTarget.init)
                 let assessment = LocalEvaluator(paths: .currentUser(), adapterSet: adapters)
-                    .evaluate(snapshot: snapshot, settings: AppSettings(), inGracePeriod: false)
+                    .evaluate(snapshot: snapshot, settings: settings, inGracePeriod: false)
                 log("")
                 log("总体：\(assessment.severity.symbol) \(assessment.severity.displayName) — \(assessment.primaryReason)")
                 for card in assessment.cards {
@@ -56,6 +60,14 @@ enum LiveSmokeTests {
                     for item in card.evidence { log("    · \(item)") }
                 }
                 for note in assessment.diagnosticNotes { log("诊断：\(note)") }
+                if settings.tailnetTarget != nil {
+                    log("家庭子网：\(assessment.tailnetDecision.skippedText ?? "探测")")
+                    if let site = assessment.tailnetDecision.site {
+                        let result = await URLSessionSiteProber().probe(site: site, attempts: 1,
+                                                                        timeout: PulseConstants.probeTimeout)
+                        log("家庭子网探测：\(result.summaryText)\(result.attempts.first?.detail.map { "（\($0)）" } ?? "")")
+                    }
+                }
             },
             TestCase("连续采集 3 轮的耗时", timeout: 30) { t in
                 let provider = SystemSnapshotProvider()

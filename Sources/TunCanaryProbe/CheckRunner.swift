@@ -22,14 +22,16 @@ private final class PartialCheck: @unchecked Sendable {
     private var secondLocal: LocalAssessment?
     private var sites: [Site] = []
     private var intranet: IntranetProbeDecision = .notConfigured
+    private var tailnet: TailnetProbeDecision = .notConfigured
     private var results: [Int: SiteResult] = [:]
 
     func setFirstLocal(_ local: LocalAssessment) { locked { firstLocal = local } }
     func setSecondLocal(_ local: LocalAssessment) { locked { secondLocal = local } }
-    func setPlan(sites: [Site], intranet: IntranetProbeDecision) {
+    func setPlan(sites: [Site], intranet: IntranetProbeDecision, tailnet: TailnetProbeDecision) {
         locked {
             self.sites = sites
             self.intranet = intranet
+            self.tailnet = tailnet
         }
     }
     func record(_ result: SiteResult, at index: Int) { locked { results[index] = result } }
@@ -41,7 +43,7 @@ private final class PartialCheck: @unchecked Sendable {
         let done = sites.indices.compactMap { results[$0] }
         let pending = sites.indices.filter { results[$0] == nil }.map { sites[$0] }
         return CLIVerdict.timedOut(firstLocal: firstLocal, secondLocal: secondLocal, siteResults: done,
-                                   incompleteSites: pending, intranet: intranet, full: full,
+                                   incompleteSites: pending, intranet: intranet, tailnet: tailnet, full: full,
                                    checkedAt: checkedAt, configuredSites: configuredSites)
     }
 
@@ -130,10 +132,12 @@ public struct CheckRunner: Sendable {
         // 内网探测决策取自第一次评估的 VPN 状态与设置。
         let intranet = SiteCatalog.intranetDecision(intranetURL: settings.intranetURL,
                                                     vpnState: firstLocal.vpnState)
+        // 家庭子网决策取自第一次评估的路由判断。
+        let tailnet = firstLocal.tailnetDecision
         let sites = options.full
-            ? SiteCatalog.fullCheckSites(intranet: intranet, sites: settings.sites)
-            : SiteCatalog.lightProbeSites(intranet: intranet, sites: settings.sites)
-        partial.setPlan(sites: sites, intranet: intranet)
+            ? SiteCatalog.fullCheckSites(intranet: intranet, tailnet: tailnet, sites: settings.sites)
+            : SiteCatalog.lightProbeSites(intranet: intranet, tailnet: tailnet, sites: settings.sites)
+        partial.setPlan(sites: sites, intranet: intranet, tailnet: tailnet)
 
         // 复查本机（黄或红时）与站点探测并发进行。
         async let secondLocal = recheckIfNeeded(firstLocal: firstLocal, partial: partial)
@@ -147,6 +151,7 @@ public struct CheckRunner: Sendable {
             secondLocal: second,
             siteResults: siteResults,
             intranet: intranet,
+            tailnet: tailnet,
             full: options.full,
             checkedAt: now(),
             configuredSites: settings.enabledSites

@@ -8,6 +8,7 @@ import Foundation
 public final class SettingsStore: @unchecked Sendable {
     public enum Key {
         public static let intranetURL = "intranetURL"
+        public static let tailnetTarget = "tailnet.target"
         public static let expectedDNS = "expectedDNS"
         /// 旧版没有以下三个键：缺失时按旧行为迁移（有预期 DNS 即为 `equals`）。
         public static let disconnectedDNSRule = "dnsRule.vpnDisconnected"
@@ -26,7 +27,7 @@ public final class SettingsStore: @unchecked Sendable {
         public static let sites = "sites"
         /// 站点数据含不合法项或无法解码时，读取前备份的原始数据。
         public static let sitesInvalidBackup = "sites.invalidBackup"
-        public static let all = [intranetURL, expectedDNS, disconnectedDNSRule, connectedDNSRule,
+        public static let all = [intranetURL, tailnetTarget, expectedDNS, disconnectedDNSRule, connectedDNSRule,
                                  residualDNSWarning, proxyClient, manualProxy, canaryHost, checkPages,
                                  egressTargets, notificationsEnabled,
                                  localCheckInterval, lightProbeInterval, sites, sitesInvalidBackup]
@@ -52,6 +53,10 @@ public final class SettingsStore: @unchecked Sendable {
         if let text = defaults.string(forKey: Key.intranetURL),
            case .success(let url) = SettingsValidator.validateIntranetURL(text) {
             settings.intranetURL = url
+        }
+        if let text = defaults.string(forKey: Key.tailnetTarget),
+           case .success(let target) = SettingsValidator.validateTailnetTarget(text) {
+            settings.tailnetTarget = target
         }
         if let list = defaults.stringArray(forKey: Key.expectedDNS),
            case .success(let dns) = SettingsValidator.validateExpectedDNS(list) {
@@ -135,6 +140,11 @@ public final class SettingsStore: @unchecked Sendable {
             defaults.set(url.absoluteString, forKey: Key.intranetURL)
         } else {
             defaults.removeObject(forKey: Key.intranetURL)
+        }
+        if let target = settings.tailnetTarget {
+            defaults.set(target.description, forKey: Key.tailnetTarget)
+        } else {
+            defaults.removeObject(forKey: Key.tailnetTarget)
         }
         defaults.set(DNSList.normalize(settings.expectedDNS), forKey: Key.expectedDNS)
         defaults.set(settings.disconnectedDNSRule.rawValue, forKey: Key.disconnectedDNSRule)

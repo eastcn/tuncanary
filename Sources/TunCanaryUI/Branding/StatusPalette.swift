@@ -24,11 +24,12 @@ public enum StatusTone: String, Sendable, CaseIterable, Equatable {
         }
     }
 
-    /// 探测类别的色调：可达为绿，4xx 为蓝，其余（计为失败）为红。
+    /// 探测类别的色调：可达为绿，4xx 为蓝，本地网络权限被拒为灰，其余（计为失败）为红。
     public init(_ category: ProbeCategory) {
         switch category {
         case .reachable: self = .ok
         case .restricted: self = .info
+        case .localNetworkDenied: self = .neutral
         case .serverError, .tlsError, .timeout, .dnsFailure, .connectionFailure: self = .critical
         }
     }

@@ -15,7 +15,7 @@ SwiftPM 工程，`swift-tools-version:5.10`，平台 macOS 13，没有第三方�
 | `TunCanaryDNSGuard` | 可选的 DNS 守护进程，由 LaunchDaemon 以 root 身份运行。每次运行完成一次判定和写入后退出。判定逻辑在 `TunCanaryCore`，写入和代理 DNS 探测在 `TunCanarySystem` |
 | `TunCanarySelfTest` | 自带的测试运行器 |
 
-一轮检查的数据流：`SystemSnapshotProvider` 采集 `LocalSnapshot`，`LocalEvaluator` 得出 `LocalAssessment`（四张状态卡和故障列表），站点探测结果进入 `ConnectivityTracker`，两者合并为 `OverallAssessment`，再由 `NotificationDeduper` 决定是否通知，由 `FaultEventRecorder` 生成故障事件并经 `FaultEventStore` 写入本机日志（宽限期内两者都不调用）。
+一轮检查的数据流：`SystemSnapshotProvider` 采集 `LocalSnapshot`，`LocalEvaluator` 得出 `LocalAssessment`（四张状态卡，有 Tailscale 时加一张 Tailnet 卡，以及故障列表），站点探测结果进入 `ConnectivityTracker`，两者合并为 `OverallAssessment`，再由 `NotificationDeduper` 决定是否通知，由 `FaultEventRecorder` 生成故障事件并经 `FaultEventStore` 写入本机日志（宽限期内两者都不调用）。
 
 ## 测试
 
@@ -33,6 +33,8 @@ scripts/test.sh --list Core.VPN          # 只列出用例
 TUNCANARY_LIVE=1 scripts/test.sh System.Live Probe.Live       # 读取本机真实状态并访问探测站点
 TUNCANARY_RENDER_DIR=/tmp/tuncanary-ui scripts/test.sh UI.RenderPreview   # 离屏渲染界面预览 PNG
 ```
+
+实机采集时设置 `TUNCANARY_LIVE_TAILNET_TARGET=地址:端口`，会按这个家庭子网目标评估 Tailnet 卡；目标经 Tailscale 路由时再做一次 TCP 探测。它不读取、也不修改应用设置。
 
 DNS 守护进程的安装脚本可以装到临时根目录，不需要 root，也不调用 `launchctl`：
 

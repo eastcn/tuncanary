@@ -119,6 +119,8 @@ public struct AppSettings: Sendable, Equatable, Codable {
 
     /// 内网站点 URL，只在 VPN 已连接时探测；未配置为 nil。
     public var intranetURL: URL?
+    /// 家庭子网目标（IPv4:端口），只在经 Tailscale 路由时做 TCP 探测；未配置为 nil。
+    public var tailnetTarget: TailnetTarget?
     /// VPN 断开、TUN 运行时的 DNS 规则。
     public var disconnectedDNSRule: DisconnectedDNSRule
     /// `disconnectedDNSRule` 为 `.equals` 时的预期 DNS（一个或多个 IPv4）。
@@ -160,9 +162,11 @@ public struct AppSettings: Sendable, Equatable, Codable {
         notificationsEnabled: Bool = true,
         localCheckInterval: TimeInterval = AppSettings.defaultLocalCheckInterval,
         lightProbeInterval: TimeInterval = AppSettings.defaultLightProbeInterval,
-        sites: [Site] = SiteCatalog.defaultSites
+        sites: [Site] = SiteCatalog.defaultSites,
+        tailnetTarget: TailnetTarget? = nil
     ) {
         self.intranetURL = intranetURL
+        self.tailnetTarget = tailnetTarget
         self.disconnectedDNSRule = disconnectedDNSRule ?? Self.inferredRule(expectedDNS)
         self.expectedDNS = expectedDNS
         self.connectedDNSRule = connectedDNSRule
@@ -186,7 +190,7 @@ public struct AppSettings: Sendable, Equatable, Codable {
     private enum CodingKeys: String, CodingKey {
         case intranetURL, disconnectedDNSRule, expectedDNS, connectedDNSRule, residualDNSWarning
         case proxyClient, manualProxy, canaryHost, checkPages, egressTargets
-        case notificationsEnabled, localCheckInterval, lightProbeInterval, sites
+        case notificationsEnabled, localCheckInterval, lightProbeInterval, sites, tailnetTarget
     }
 
     /// 旧版 JSON 没有规则、周期和站点字段；缺失时沿用旧默认值。
@@ -209,6 +213,7 @@ public struct AppSettings: Sendable, Equatable, Codable {
         lightProbeInterval = try values.decodeIfPresent(TimeInterval.self, forKey: .lightProbeInterval)
             ?? Self.defaultLightProbeInterval
         sites = try values.decodeIfPresent([Site].self, forKey: .sites) ?? SiteCatalog.defaultSites
+        tailnetTarget = try? values.decodeIfPresent(TailnetTarget.self, forKey: .tailnetTarget)
     }
 
     /// 实际检测的出口目标：按固定顺序去重，为空时回落到默认值。
@@ -250,6 +255,7 @@ public enum SettingsValidationError: Error, Equatable, Sendable {
     case intranetURLInvalid
     case intranetURLScheme
     case intranetURLMissingHost
+    case tailnetTargetInvalid
     case expectedDNSEmpty
     case expectedDNSInvalid(String)
     case localCheckIntervalInvalid
@@ -276,6 +282,8 @@ public enum SettingsValidationError: Error, Equatable, Sendable {
             return "内网站点 URL 必须是 http 或 https"
         case .intranetURLMissingHost:
             return "内网站点 URL 缺少主机名"
+        case .tailnetTargetInvalid:
+            return "家庭子网目标须为“IPv4 地址:端口”，例如 192.168.1.10:443"
         case .expectedDNSEmpty:
             return "预期 DNS 至少填写一个 IPv4 地址"
         case .expectedDNSInvalid(let value):
@@ -287,13 +295,13 @@ public enum SettingsValidationError: Error, Equatable, Sendable {
         case .tooManySites:
             return "公开站点最多只能配置 20 个"
         case .siteIDInvalid:
-            return "站点 ID 不能为空，且不能使用内网保留 ID"
+            return "站点 ID 不能为空，且不能使用内网站点或家庭子网的保留 ID"
         case .siteIDDuplicate(let id):
             return "站点 ID“\(id)”重复"
         case .siteNameInvalid(let id):
             return "站点“\(id)”的名称须为 1 至 60 个字符"
         case .siteGroupInvalid(let id):
-            return "站点“\(id)”的公开分组须为 1 至 20 个字符，不能使用“内网站点”或控制字符"
+            return "站点“\(id)”的公开分组须为 1 至 20 个字符，不能使用“内网站点”“家庭子网”或控制字符"
         case .siteURLInvalid(let id):
             return "站点“\(id)”的 URL 须为包含主机名的 http 或 https 地址"
         case .siteURLCredentials(let id):
@@ -327,7 +335,9 @@ public enum SettingsValidator {
         var ids = Set<String>()
         for site in sites {
             let id = site.id.trimmingCharacters(in: .whitespacesAndNewlines)
-            if id.isEmpty || site.id == SiteCatalog.intranetID { errors.append(.siteIDInvalid) }
+            if id.isEmpty || site.id == SiteCatalog.intranetID || site.id == SiteCatalog.tailnetID {
+                errors.append(.siteIDInvalid)
+            }
             if !ids.insert(site.id).inserted { errors.append(.siteIDDuplicate(site.id)) }
             let name = site.name.trimmingCharacters(in: .whitespacesAndNewlines)
             if name.isEmpty || name.count > 60 { errors.append(.siteNameInvalid(site.id)) }
@@ -353,6 +363,14 @@ public enum SettingsValidator {
         }
         guard let host = url.host, !host.isEmpty else { return .failure(.intranetURLMissingHost) }
         return .success(url)
+    }
+
+    /// 家庭子网目标：空串表示未配置；否则须为 `IPv4:端口`。
+    public static func validateTailnetTarget(_ text: String) -> Result<TailnetTarget?, SettingsValidationError> {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return .success(nil) }
+        guard let target = TailnetTarget(trimmed) else { return .failure(.tailnetTargetInvalid) }
+        return .success(target)
     }
 
     /// 手动模式参数：网段必须合法；端口可空；进程名可空，非空时不能含 `/`。

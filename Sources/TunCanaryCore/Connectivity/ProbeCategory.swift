@@ -13,11 +13,13 @@ public enum ProbeCategory: String, Sendable, Codable, CaseIterable {
     case dnsFailure
     /// 拒绝、重置、无路由等。
     case connectionFailure
+    /// 系统拒绝本应用访问本地网络（macOS“本地网络”隐私权限）。无法判断目标是否可达。
+    case localNetworkDenied
 
-    /// 是否计为告警失败：超时、DNS 失败、连接失败、TLS 错误和 5xx。4xx 不计。
+    /// 是否计为告警失败：超时、DNS 失败、连接失败、TLS 错误和 5xx。4xx 和本地网络权限被拒不计。
     public var countsAsFailure: Bool {
         switch self {
-        case .reachable, .restricted: return false
+        case .reachable, .restricted, .localNetworkDenied: return false
         case .serverError, .tlsError, .timeout, .dnsFailure, .connectionFailure: return true
         }
     }
@@ -31,6 +33,7 @@ public enum ProbeCategory: String, Sendable, Codable, CaseIterable {
         case .timeout: return "超时"
         case .dnsFailure: return "DNS 解析失败"
         case .connectionFailure: return "连接失败"
+        case .localNetworkDenied: return "未获得本地网络权限"
         }
     }
 
@@ -44,6 +47,7 @@ public enum ProbeCategory: String, Sendable, Codable, CaseIterable {
         case .timeout: return "超时"
         case .dnsFailure: return "DNS"
         case .connectionFailure: return "连接"
+        case .localNetworkDenied: return "权限"
         }
     }
 

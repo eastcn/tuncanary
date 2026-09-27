@@ -7,6 +7,7 @@ enum ProbeSuites {
     static var all: [TestSuite] {
         [
             URLSessionSiteProberTests.suite,
+            TCPConnectProberTests.suite,
             EgressIPTests.suite,
             ProbeBatchTests.suite,
             CheckRunnerTests.suite,

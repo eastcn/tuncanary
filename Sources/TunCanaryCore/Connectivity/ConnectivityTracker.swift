@@ -50,11 +50,13 @@ public struct ConnectivityTracker: Sendable, Equatable {
     }
 
     /// 记录一轮结果（后台轻测，或手动完整检测中关键站点的汇总结果）。
-    /// 只统计关键站点；内网站点仅在 `intranetEligible`（VPN 已连接且已配置）时参与，否则计数清零。
+    /// 只统计关键站点；内网站点仅在 `intranetEligible`（VPN 已连接且已配置）时参与，
+    /// 家庭子网仅在 `tailnetEligible`（目标经 Tailscale 路由）时参与，否则计数清零。
     /// 本轮未出现的关键站点保持原计数。
-    public mutating func recordRound(_ results: [SiteResult], intranetEligible: Bool) {
+    public mutating func recordRound(_ results: [SiteResult], intranetEligible: Bool, tailnetEligible: Bool = false) {
         for result in results where result.site.isKey && result.site.inLightProbe && result.site.isEnabled {
             if result.site.group == .intranet && !intranetEligible { continue }
+            if result.site.group == .tailnet && !tailnetEligible { continue }
             if result.isFailure {
                 consecutiveFailures[result.site.id, default: 0] += 1
             } else {
@@ -63,6 +65,9 @@ public struct ConnectivityTracker: Sendable, Equatable {
         }
         if !intranetEligible {
             consecutiveFailures[SiteCatalog.intranetID] = nil
+        }
+        if !tailnetEligible {
+            consecutiveFailures[SiteCatalog.tailnetID] = nil
         }
     }
 
@@ -102,7 +107,7 @@ public struct ConnectivityTracker: Sendable, Equatable {
         var faults: [ConnectivityFault] = []
         let phrase = context.phrase
         for group in SiteGroup.publicGroups(for: sites) {
-            let keys = sites.filter { $0.group == group && $0.id != SiteCatalog.intranetID
+            let keys = sites.filter { $0.group == group && $0.id != SiteCatalog.intranetID && $0.id != SiteCatalog.tailnetID
                 && $0.isEnabled && $0.isKey && $0.inLightProbe }
             guard !keys.isEmpty else { continue }
             let failed = keys.filter { failing.contains($0.id) }
@@ -137,6 +142,12 @@ public struct ConnectivityTracker: Sendable, Equatable {
             faults.append(ConnectivityFault(
                 key: .site(SiteCatalog.intranetID), severity: .warning,
                 message: "内网站点\(phrase)", siteIDs: [SiteCatalog.intranetID]))
+        }
+        // 家庭子网经 Tailscale 连续打不通：家里的服务整体不可用，判红。
+        if failing.contains(SiteCatalog.tailnetID) {
+            faults.append(ConnectivityFault(
+                key: .site(SiteCatalog.tailnetID), severity: .critical,
+                message: "家庭子网\(phrase)", siteIDs: [SiteCatalog.tailnetID]))
         }
         return faults
     }

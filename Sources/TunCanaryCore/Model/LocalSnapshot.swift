@@ -203,6 +203,8 @@ public struct LocalSnapshot: Sendable, Equatable {
     public var canaryHost: String
     /// DNS 守护进程的安装情况、配置和状态。只用于展示，不参与判定。
     public var dnsGuard: Collected<DNSGuardSnapshot>
+    /// MagicDNS 反查与名称解析。没有 Tailscale 隧道时为 `.notCollected`。
+    public var tailnet: Collected<TailnetProbeSnapshot>
 
     public init(
         collectedAt: Date,
@@ -219,7 +221,8 @@ public struct LocalSnapshot: Sendable, Equatable {
         canary: CanaryResult = .notTested,
         canaryIPv6: CanaryIPv6Result = .notTested,
         canaryHost: String = PulseConstants.canaryHost,
-        dnsGuard: Collected<DNSGuardSnapshot> = .notCollected
+        dnsGuard: Collected<DNSGuardSnapshot> = .notCollected,
+        tailnet: Collected<TailnetProbeSnapshot> = .notCollected
     ) {
         self.collectedAt = collectedAt
         self.clashConfig = clashConfig
@@ -236,6 +239,7 @@ public struct LocalSnapshot: Sendable, Equatable {
         self.canaryIPv6 = canaryIPv6
         self.canaryHost = canaryHost
         self.dnsGuard = dnsGuard
+        self.tailnet = tailnet
     }
 
     /// verge-mihomo 是否运行：优先用 `mihomoRunning`，未采集时从进程列表推断。

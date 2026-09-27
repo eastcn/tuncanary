@@ -34,7 +34,9 @@ enum FixtureTests {
                 t.expect(!result.intranetProbeEnabled)
                 t.expectEqual(result.primaryReason, "各项检查正常")
                 t.expectEqual(result.cards.map(\.kind), StatusCardKind.displayOrder)
-                t.expectEqual(result.cards.map(\.severity), [.ok, .ok, .ok, .ok])
+                // 合成数据带一个 Tailscale 隧道，所以有第 5 张 Tailnet 卡。
+                t.expectEqual(result.cards.map(\.severity), [.ok, .ok, .ok, .ok, .ok])
+                t.expectEqual(result.tailnetDecision, .notConfigured)
                 let dns = try t.require(result.card(.primaryDNS))
                 t.expectEqual(dns.title, "Wi-Fi DNS")
                 t.expectEqual(dns.conclusion, "DNS 为 119.29.29.29，符合预期")

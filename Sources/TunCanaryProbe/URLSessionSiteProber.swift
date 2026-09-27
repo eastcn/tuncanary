@@ -185,12 +185,19 @@ public struct URLSessionSiteProber: SiteProbing, Sendable {
     }
 
     /// 串行发起 `attempts` 次 GET，用 `SiteAggregator.aggregate` 汇总。不抛错。
+    /// URL 为 `tcp://地址:端口`（家庭子网）时改做 TCP 连接探测。
     public func probe(site: Site, attempts: Int, timeout: TimeInterval) async -> SiteResult {
         var outcomes: [RequestOutcome] = []
         let count = max(attempts, 0)
         outcomes.reserveCapacity(count)
+        let tcpTarget = TailnetTarget(url: site.url)
         for _ in 0..<count {
             guard !Task.isCancelled else { break }
+            if let tcpTarget {
+                outcomes.append(await TCPConnectProber.probe(host: tcpTarget.address.description,
+                                                             port: tcpTarget.port, timeout: timeout))
+                continue
+            }
             let configuration = configurationFactory()
             let coordinator = SingleRequestCoordinator()
             outcomes.append(await coordinator.run(url: site.url, configuration: configuration, timeout: timeout))

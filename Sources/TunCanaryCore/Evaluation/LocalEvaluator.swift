@@ -25,12 +25,16 @@ public struct LocalEvaluator: Sendable {
         let state: VPNConnectionState = inGracePeriod ? .switching : vpn.state
         let canary = analyzeCanary(snapshot, tun: tun)
 
+        let tailnet = TailnetAnalysis.analyze(snapshot, target: settings.tailnetTarget,
+                                              proxyInterface: tun.interface?.name,
+                                              fakeIPRange: tun.config?.fakeIPRange)
         var cards = [
             makeTunCard(tun, source: source),
             makeVPNCard(vpn, state: state),
             makeDNSCard(snapshot, settings: settings, tun: tun, vpn: vpn, state: state, canary: canary),
             makeMihomoCard(snapshot, tun: tun, source: source),
         ]
+        if let card = tailnet.card { cards.append(card) }
         if let index = cards.firstIndex(where: { $0.kind == .primaryDNS }) {
             // AAAA 结果只作证据：不改变严重程度，不产生故障键。
             if let ipv6 = ipv6Evidence(snapshot, tun: tun) {
@@ -60,7 +64,7 @@ public struct LocalEvaluator: Sendable {
         }
 
         var assessment = LocalAssessment(
-            severity: Severity.worst(cards.map(\.severity)),
+            severity: Severity.worst(cards.filter(\.countsTowardOverall).map(\.severity)),
             cards: cards,
             faults: faults,
             primaryReason: "",
@@ -68,6 +72,7 @@ public struct LocalEvaluator: Sendable {
             vpnState: state,
             isInGracePeriod: inGracePeriod,
             intranetProbeEnabled: state == .connected,
+            tailnetDecision: inGracePeriod && tailnet.decision != .notConfigured ? .unconfirmed : tailnet.decision,
             primaryServiceName: snapshot.primaryService.value?.name,
             mihomoDNSPort: tun.config?.dnsListenPort,
             diagnosticNotes: diagnosticNotes(snapshot, tun: tun, vpn: vpn),
@@ -544,8 +549,11 @@ public struct LocalEvaluator: Sendable {
             }
             for iface in others {
                 let ips = iface.ipv4Addresses.map(\.description).joined(separator: ", ")
-                let tailscale = iface.ipv4Addresses.contains(where: IPv4CIDR.tailscale.contains) ? "，疑似 Tailscale" : ""
-                notes.append("其他隧道 \(iface.name)（\(ips)\(tailscale)），不参与判定")
+                if iface.ipv4Addresses.contains(where: IPv4CIDR.tailscale.contains) {
+                    notes.append("Tailscale 隧道 \(iface.name)（\(ips)），由 Tailnet 卡检查，不参与 VPN 判定")
+                } else {
+                    notes.append("其他隧道 \(iface.name)（\(ips)），不参与判定")
+                }
             }
         }
         if let resolvers = snapshot.resolvers.value {

@@ -1,11 +1,11 @@
 import Foundation
 
-/// 单次 HTTPS 请求的结果。
+/// 单次 HTTPS 请求（或 TCP 连接）的结果。
 public struct RequestOutcome: Sendable, Equatable {
     public var category: ProbeCategory
     /// 收到 HTTP 响应时的状态码。
     public var httpStatus: Int?
-    /// fetchStart → responseStart（秒），只在收到 HTTP 响应时有意义。
+    /// HTTP：fetchStart → responseStart（秒），只在收到 HTTP 响应时有意义；TCP：连接建立或被拒绝所用的时间。
     public var latency: TimeInterval?
     /// 错误说明（如 URLError 描述），仅用于展示。
     public var detail: String?
@@ -22,6 +22,11 @@ public struct RequestOutcome: Sendable, Equatable {
         RequestOutcome(category: ProbeCategory(httpStatus: status), httpStatus: status, latency: latency)
     }
 
+    /// TCP 连接探测收到对端应答：连接建立，或端口拒绝连接（说明路径可达）。
+    public static func tcpAnswered(latency: TimeInterval, refused: Bool) -> RequestOutcome {
+        RequestOutcome(category: .reachable, latency: latency, detail: refused ? "端口拒绝连接，路径可达" : nil)
+    }
+
     /// 未收到 HTTP 响应的失败。
     public static func failure(_ category: ProbeCategory, detail: String? = nil) -> RequestOutcome {
         RequestOutcome(category: category, detail: detail)
@@ -36,7 +41,7 @@ public struct RequestOutcome: Sendable, Equatable {
 public struct SiteResult: Sendable, Equatable {
     public var site: Site
     public var category: ProbeCategory
-    /// 收到 HTTP 响应的请求的延迟中位数（秒）。
+    /// 收到应答的请求的延迟中位数（秒）。
     public var medianLatency: TimeInterval?
     public var attempts: [RequestOutcome]
     public var checkedAt: Date
@@ -96,9 +101,9 @@ public enum SiteAggregator {
         return best?.key ?? .reachable
     }
 
-    /// 收到 HTTP 响应的请求的延迟中位数。
+    /// 收到应答（HTTP 响应或 TCP 应答）的请求的延迟中位数。失败的请求没有延迟。
     public static func medianLatency(_ outcomes: [RequestOutcome]) -> TimeInterval? {
-        median(outcomes.filter(\.receivedResponse).compactMap(\.latency))
+        median(outcomes.filter { $0.receivedResponse || $0.category == .reachable }.compactMap(\.latency))
     }
 
     /// 中位数；偶数个时取中间两个的平均值。

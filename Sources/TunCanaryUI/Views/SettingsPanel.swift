@@ -1,7 +1,7 @@
 import SwiftUI
 import TunCanaryCore
 
-/// 设置页：检测频率、公开站点、内网站点、DNS 与系统选项。
+/// 设置页：检测频率、公开站点、内网站点、家庭子网、DNS 与系统选项。
 struct SettingsPanel: View {
     @ObservedObject var model: AppModel
     let maxScrollHeight: CGFloat?
@@ -19,6 +19,12 @@ struct SettingsPanel: View {
                         text: $model.settingsDraft.intranetURL,
                         caption: "必须是 http 或 https，且含主机名。留空表示未配置，内网站点显示“未验证”。诊断摘要只显示“已配置”或“未配置”。",
                         error: validation.intranetURLError)
+                    SettingsTextField(
+                        title: "家庭子网目标",
+                        placeholder: "192.168.1.10:443",
+                        text: $model.settingsDraft.tailnetTarget,
+                        caption: "家庭局域网里一台常开设备的 IPv4 地址和 TCP 端口。经 Tailscale 子网路由访问时做连接探测，连续三轮失败判为故障；端口拒绝连接也算可达。当前网络与家庭子网网段相同时不探测。留空表示未配置。",
+                        error: validation.tailnetTargetError)
                     ProxyClientSection(model: model, validation: validation)
                     DNSRulesSection(model: model, error: validation.expectedDNSError)
                     SettingsTextField(

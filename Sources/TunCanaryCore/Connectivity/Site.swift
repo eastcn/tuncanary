@@ -1,6 +1,6 @@
 import Foundation
 
-/// 公开站点分组。自定义组以组名为标识；`intranet` 专供 VPN 门槛下的内网站点。
+/// 公开站点分组。自定义组以组名为标识；`intranet` 专供 VPN 门槛下的内网站点，`tailnet` 专供经 Tailscale 探测的家庭子网。
 public struct SiteGroup: RawRepresentable, Hashable, Sendable, Codable, CaseIterable {
     public let rawValue: String
 
@@ -16,15 +16,20 @@ public struct SiteGroup: RawRepresentable, Hashable, Sendable, Codable, CaseIter
     public static let mainland = SiteGroup(rawValue: "mainland")
     public static let overseas = SiteGroup(rawValue: "overseas")
     public static let intranet = SiteGroup(rawValue: "intranet")
+    public static let tailnet = SiteGroup(rawValue: "tailnet")
     /// 旧调用方的兼容别名；不再是独立分组。
     public static let japan = overseas
-    public static let allCases: [SiteGroup] = [.mainland, .overseas, .intranet]
+    public static let allCases: [SiteGroup] = [.mainland, .overseas, .intranet, .tailnet]
+
+    /// 按条件参与探测的特殊分组（内网站点、家庭子网），不属于公开组。
+    public var isConditional: Bool { self == .intranet || self == .tailnet }
 
     public var displayName: String {
         switch self {
         case .mainland: return "国内"
         case .overseas: return "海外"
         case .intranet: return "内网站点"
+        case .tailnet: return "家庭子网"
         default: return rawValue
         }
     }
@@ -32,17 +37,17 @@ public struct SiteGroup: RawRepresentable, Hashable, Sendable, Codable, CaseIter
     /// 已启用公开组按站点首次出现的顺序显示，不显示空组。
     public static func publicGroups(for sites: [Site]) -> [SiteGroup] {
         var groups: [SiteGroup] = []
-        for site in sites where site.isEnabled && site.group != .intranet && !groups.contains(site.group) {
+        for site in sites where site.isEnabled && !site.group.isConditional && !groups.contains(site.group) {
             groups.append(site.group)
         }
         return groups
     }
 
-    /// 公开组名的统一约束；内网站点始终由 VPN 决策单独管理。
+    /// 公开组名的统一约束；内网站点和家庭子网由各自的决策单独管理。
     public var isValidPublicGroup: Bool {
         let name = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !name.isEmpty && name.count <= 20 && name == rawValue &&
-            self != .intranet && name != SiteGroup.intranet.displayName &&
+        return !name.isEmpty && name.count <= 20 && name == rawValue && !isConditional &&
+            name != SiteGroup.intranet.displayName && name != SiteGroup.tailnet.displayName &&
             !name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) })
     }
 
@@ -123,6 +128,51 @@ public enum IntranetProbeDecision: Sendable, Equatable {
     }
 }
 
+/// 家庭子网探测决策：按 Tailnet 卡的路由判断决定是否探测。
+public enum TailnetProbeDecision: Sendable, Equatable {
+    /// 目标经 Tailscale 隧道路由：参与探测。
+    case probe(Site)
+    /// 未配置家庭子网目标。
+    case notConfigured
+    /// 没有 Tailscale 隧道：不探测，不计入故障。
+    case tailscaleDown
+    /// 目标落在当前网络的网段内（在家，或外部网络恰好同网段）：不探测，不计入故障。
+    case sameSubnet
+    /// 子网路由没有指向 Tailscale：不探测，由 Tailnet 卡报告。
+    case routeUnavailable
+    /// 路由表未采集或处于切换中：不探测。
+    case unconfirmed
+
+    public var site: Site? {
+        if case .probe(let site) = self { return site }
+        return nil
+    }
+
+    /// 不探测时的展示文本。
+    public var skippedText: String? {
+        switch self {
+        case .probe: return nil
+        case .notConfigured: return "未配置"
+        case .tailscaleDown: return "未连接 Tailscale"
+        case .sameSubnet: return "当前网络与家庭子网网段相同"
+        case .routeUnavailable: return "子网路由未生效"
+        case .unconfirmed: return "路由未确认"
+        }
+    }
+
+    /// JSON 中的状态值。
+    public var statusValue: String {
+        switch self {
+        case .probe: return "probed"
+        case .notConfigured: return "notConfigured"
+        case .tailscaleDown: return "tailscaleDown"
+        case .sameSubnet: return "sameSubnet"
+        case .routeUnavailable: return "routeUnavailable"
+        case .unconfirmed: return "unconfirmed"
+        }
+    }
+}
+
 /// 内置站点：默认清单与可一键添加的常用站点模板。
 public enum SiteCatalog {
     private static func make(_ id: String, _ name: String, _ group: SiteGroup, _ url: String,
@@ -149,6 +199,14 @@ public enum SiteCatalog {
         Site(id: intranetID, name: "内网站点", group: .intranet, url: url, isKey: true, inLightProbe: true)
     }
 
+    /// 家庭子网站点 ID。
+    public static let tailnetID = "tailnet"
+
+    /// 家庭子网（关键；只在目标经 Tailscale 路由时参与轻测）。URL 形如 `tcp://192.0.2.10:443`，做 TCP 连接探测。
+    public static func tailnet(target: TailnetTarget) -> Site {
+        Site(id: tailnetID, name: "家庭子网", group: .tailnet, url: target.url, isKey: true, inLightProbe: true)
+    }
+
     /// 默认公开站点。后台检测与告警：百度、Google、GitHub。
     public static let defaultSites: [Site] = [baidu, bilibili, google, github, cloudflare]
 
@@ -165,17 +223,19 @@ public enum SiteCatalog {
         }
     }
 
-    /// 后台轻测站点：设为后台检测的已启用站点，加上满足条件的内网。
+    /// 后台轻测站点：设为后台检测的已启用站点，加上满足条件的内网和家庭子网。
     public static func lightProbeSites(intranet decision: IntranetProbeDecision,
+                                       tailnet: TailnetProbeDecision = .notConfigured,
                                        sites: [Site] = defaultSites) -> [Site] {
-        sites.filter { $0.isEnabled && $0.group != .intranet && $0.inLightProbe }
-            + (decision.site.map { [$0] } ?? [])
+        sites.filter { $0.isEnabled && !$0.group.isConditional && $0.inLightProbe }
+            + (decision.site.map { [$0] } ?? []) + (tailnet.site.map { [$0] } ?? [])
     }
 
-    /// 手动完整检测站点：全部已启用站点，加上满足条件的内网。
+    /// 手动完整检测站点：全部已启用站点，加上满足条件的内网和家庭子网。
     public static func fullCheckSites(intranet decision: IntranetProbeDecision,
+                                      tailnet: TailnetProbeDecision = .notConfigured,
                                       sites: [Site] = defaultSites) -> [Site] {
-        sites.filter { $0.isEnabled && $0.group != .intranet }
-            + (decision.site.map { [$0] } ?? [])
+        sites.filter { $0.isEnabled && !$0.group.isConditional }
+            + (decision.site.map { [$0] } ?? []) + (tailnet.site.map { [$0] } ?? [])
     }
 }

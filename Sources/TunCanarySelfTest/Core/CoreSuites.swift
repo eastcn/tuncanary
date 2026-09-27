@@ -28,6 +28,7 @@ enum CoreSuites {
             CLITests.suite,
             SettingsTests.suite,
             DiagnosticsTests.suite,
+            TailnetTests.suite,
         ]
     }
 }

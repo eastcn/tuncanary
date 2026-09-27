@@ -8,6 +8,7 @@ enum SystemSuites {
         [
             DNSMessageTests.suite,
             DNSMessageTests.clientSuite,
+            MagicDNSTests.suite,
             ChangeDebouncerTests.suite,
             CommandRunnerTests.suite,
             CollectorTests.processSuite,

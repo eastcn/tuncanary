@@ -6,9 +6,11 @@ public enum StatusCardKind: String, Sendable, Codable, CaseIterable {
     case vpn
     case primaryDNS
     case proxyDNS
+    /// 只在存在 Tailscale 隧道或配置了家庭子网目标时出现。
+    case tailnet
 
-    /// 弹窗中的顺序：Clash TUN、VPN、主网络 DNS、Mihomo DNS。
-    public static let displayOrder: [StatusCardKind] = [.proxyTun, .vpn, .primaryDNS, .proxyDNS]
+    /// 弹窗中的顺序：Clash TUN、VPN、主网络 DNS、Mihomo DNS、Tailnet。
+    public static let displayOrder: [StatusCardKind] = [.proxyTun, .vpn, .primaryDNS, .proxyDNS, .tailnet]
 
     /// 同等严重程度下原因的排列优先级（越小越靠前），也用于命令行输出顺序。
     public var reasonPriority: Int {
@@ -17,6 +19,7 @@ public enum StatusCardKind: String, Sendable, Codable, CaseIterable {
         case .proxyTun: return 1
         case .proxyDNS: return 2
         case .vpn: return 3
+        case .tailnet: return 4
         }
     }
 }
@@ -68,6 +71,11 @@ public struct StatusCard: Sendable, Equatable, Identifiable {
     public var line: String {
         "\(label)：\(conclusion)"
     }
+
+    /// 是否计入整体结论。Tailnet 卡的灰色表示“这个场景判断不了”（如在家时网段重叠），不拉低整体。
+    public var countsTowardOverall: Bool {
+        !(kind == .tailnet && severity == .unknown)
+    }
 }
 
 /// Clash TUN 状态。
@@ -118,6 +126,8 @@ public struct LocalAssessment: Sendable, Equatable {
     public var isInGracePeriod: Bool
     /// 是否启用内网站点探测（VPN 已连接时为 true）。
     public var intranetProbeEnabled: Bool
+    /// 家庭子网探测决策。
+    public var tailnetDecision: TailnetProbeDecision
     /// 主网络服务名，例如 “Wi-Fi”。
     public var primaryServiceName: String?
     /// Mihomo DNS 端口（来自配置）。
@@ -137,6 +147,7 @@ public struct LocalAssessment: Sendable, Equatable {
         vpnState: VPNConnectionState,
         isInGracePeriod: Bool,
         intranetProbeEnabled: Bool,
+        tailnetDecision: TailnetProbeDecision = .notConfigured,
         primaryServiceName: String?,
         mihomoDNSPort: Int?,
         diagnosticNotes: [String],
@@ -151,6 +162,7 @@ public struct LocalAssessment: Sendable, Equatable {
         self.vpnState = vpnState
         self.isInGracePeriod = isInGracePeriod
         self.intranetProbeEnabled = intranetProbeEnabled
+        self.tailnetDecision = tailnetDecision
         self.primaryServiceName = primaryServiceName
         self.mihomoDNSPort = mihomoDNSPort
         self.diagnosticNotes = diagnosticNotes
@@ -167,10 +179,10 @@ public struct LocalAssessment: Sendable, Equatable {
         cards.first { $0.kind == kind }
     }
 
-    /// 非正常的卡片按严重程度（相同时按卡片优先级）排列成原因。
+    /// 非正常的卡片按严重程度（相同时按卡片优先级）排列成原因。不计入整体的卡片不列为原因。
     public var reasons: [AssessmentReason] {
         cards
-            .filter { $0.severity != .ok }
+            .filter { $0.severity != .ok && $0.countsTowardOverall }
             .sorted { lhs, rhs in
                 if lhs.severity != rhs.severity { return lhs.severity > rhs.severity }
                 return lhs.kind.reasonPriority < rhs.kind.reasonPriority

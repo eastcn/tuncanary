@@ -26,8 +26,11 @@ TunCanary periodically resolves a canary domain with the system resolver. If it 
 | VPN | VPN processes, tunnels and routes, identified by adapter configs you write; unrecognized tunnels are reported. Conflicting evidence is shown as "unconfirmed" |
 | Primary DNS | Whether the canary resolves to a fake-ip address; optionally, whether the network service's saved DNS matches your rules. The canary's AAAA result is shown as evidence only and never raises an alert |
 | Proxy DNS | Whether the proxy's local DNS port answers |
+| Tailnet | Shown only when a Tailscale tunnel exists or a home subnet target is set. Whether tailnet routes go through the Tailscale tunnel, whether MagicDNS resolves this Mac's name back to its own address, and which route the home subnet target takes |
 
 It also probes a list of sites in groups, by default every 2 minutes, and alerts after three consecutive failed rounds.
+
+The Tailnet card turns red when the MagicDNS address or `100.64.0.0/10` is not routed through the Tailscale tunnel, when the home subnet target leaves through the default route, the proxy's TUN or another tunnel (the subnet route is not in effect), or when a TCP connection to the target fails three rounds in a row. It turns yellow when MagicDNS does not answer, or when the system resolves this Mac's MagicDNS name to a fake-ip, another address, or not at all. It is grey, and the target is not probed, when the target lies in the current network's subnet (at home, or on another network that happens to use the same range) or when Tailscale is not connected. A grey Tailnet card does not affect the overall status or the exit code. The TCP probe only opens a connection; a refused connection still proves the path works.
 
 ## VPNs and always-on tunnels
 
@@ -37,7 +40,7 @@ TunCanary treats two kinds of tunnel differently:
 | --- | --- | --- |
 | Usage | Connected and disconnected on demand; often rewrites the network service's DNS when it connects | Stays connected; only handles its own address range and domains |
 | Detection | Adapter configs you write, see [docs/ADAPTERS.md](docs/ADAPTERS.md) | Automatic: a utun with an address in `100.64.0.0/10` is treated as likely Tailscale |
-| Affects verdicts | Yes. Whether the VPN is connected decides which DNS rule applies to the primary service | No. It is only listed in the diagnostics |
+| Affects verdicts | Yes. Whether the VPN is connected decides which DNS rule applies to the primary service | Not part of the VPN verdict; checked separately by the Tailnet card |
 
 Do not write a VPN adapter for an always-on tunnel such as Tailscale. The adapter would make TunCanary think a VPN is always connected, and the DNS rule for the disconnected state would never apply. The DNS guard never modifies VPN-type network services such as Tailscale's.
 
@@ -71,7 +74,9 @@ tuncanary --check --json   # JSON output
 tuncanary --version        # print the version
 ```
 
-Exit codes: `0` OK, `1` warning, `2` failure, `3` unconfirmed, `64` usage error. JSON keys and values will stay compatible across releases.
+Exit codes: `0` OK, `1` warning, `2` failure, `3` unconfirmed, `64` usage error. JSON keys and values will stay compatible across releases; new versions only add keys. Version 0.3.0 added `tailnet` (the home subnet probe status) and items with `kind` `tailnet`.
+
+The home subnet target is set in Settings as `IPv4:port`, for example `192.168.1.10:443`. The first probe may trigger macOS's Local Network permission prompt; if you deny it, the row shows that permission is missing and it does not count as a failure. Diagnostics and JSON only say whether a target is configured.
 
 ## DNS guard (optional)
 
@@ -126,7 +131,7 @@ Once installed, the primary DNS card shows whether the guard is installed and th
 
 ## Privacy
 
-The menu bar app only reads state. It never changes DNS, TUN, proxy or VPN settings. Only the separately installed DNS guard changes the network service's saved DNS (see above). The app also reads the guard's config, state and events under `/Library/Application Support/TunCanary/` when they exist. It collects and uploads nothing. Diagnostics, command-line output and notifications are redacted: private IP addresses keep only the first octet, and the intranet URL and home directory are removed. A redacted log of when faults appeared, changed and cleared (at most 200 entries) is kept locally in `~/Library/Application Support/TunCanary/events.jsonl`; `scripts/uninstall.sh --clear-settings` removes it.
+The menu bar app only reads state. It never changes DNS, TUN, proxy or VPN settings. Only the separately installed DNS guard changes the network service's saved DNS (see above). The app also reads the guard's config, state and events under `/Library/Application Support/TunCanary/` when they exist. When a Tailscale tunnel exists, it asks MagicDNS (`100.100.100.100`) for this Mac's name and resolves that name; when a home subnet target is set, it opens TCP connections to it. MagicDNS names and the tailnet domain are never written to evidence or diagnostics. It collects and uploads nothing. Diagnostics, command-line output and notifications are redacted: private IP addresses keep only the first octet, and the intranet URL and home directory are removed. A redacted log of when faults appeared, changed and cleared (at most 200 entries) is kept locally in `~/Library/Application Support/TunCanary/events.jsonl`; `scripts/uninstall.sh --clear-settings` removes it.
 
 ## License
 

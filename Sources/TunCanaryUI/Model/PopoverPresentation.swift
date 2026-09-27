@@ -319,11 +319,25 @@ public enum PopoverFormatter {
         }
     }
 
+    /// 家庭子网未探测时的补充说明。
+    public static func tailnetNote(_ decision: TailnetProbeDecision) -> String? {
+        switch decision {
+        case .probe, .notConfigured: return nil
+        case .tailscaleDown: return "Tailscale 未连接时不探测，不计入故障"
+        case .sameSubnet: return "目标在当前网络的网段内（例如在家），不经 Tailscale，不探测"
+        case .routeUnavailable: return "子网路由没有指向 Tailscale，见 Tailnet 卡"
+        case .unconfirmed: return "路由未确认，暂不探测"
+        }
+    }
+
     /// 按当前启用站点的分组展示；内网站点单独遵守 VPN 门槛，不显示 URL。
+    /// 家庭子网只在配置了目标时显示，遵守 Tailnet 卡的路由判断。
     public static func siteGroups(history: SiteHistory, intranet decision: IntranetProbeDecision,
+                                  tailnet: TailnetProbeDecision = .notConfigured,
                                   redactor: Redactor = Redactor(),
                                   sites: [Site] = SiteCatalog.defaultSites) -> [SiteGroupPresentation] {
-        (SiteGroup.publicGroups(for: sites) + [.intranet]).map { group in
+        let conditional: [SiteGroup] = tailnet == .notConfigured ? [.intranet] : [.intranet, .tailnet]
+        return (SiteGroup.publicGroups(for: sites) + conditional).map { group in
             let rows: [SiteRowPresentation]
             if group == .intranet {
                 let results = history.recent(for: SiteCatalog.intranetID)
@@ -334,6 +348,18 @@ public enum PopoverFormatter {
                                            url: URL(string: "https://intranet.invalid/")!, isKey: true, inLightProbe: true)
                     var row = siteRow(site: placeholder, history: results, skippedText: decision.skippedText)
                     row.detailText = intranetNote(decision)
+                    if let note = row.detailText { row.accessibilityText += "，\(note)" }
+                    rows = [row]
+                }
+            } else if group == .tailnet {
+                let results = history.recent(for: SiteCatalog.tailnetID)
+                if let site = tailnet.site {
+                    rows = [siteRow(site: site, history: results, redactor: redactor)]
+                } else {
+                    let placeholder = Site(id: SiteCatalog.tailnetID, name: "家庭子网", group: .tailnet,
+                                           url: URL(string: "tcp://192.0.2.1:1")!, isKey: true, inLightProbe: true)
+                    var row = siteRow(site: placeholder, history: results, skippedText: tailnet.skippedText)
+                    row.detailText = tailnetNote(tailnet)
                     if let note = row.detailText { row.accessibilityText += "，\(note)" }
                     rows = [row]
                 }

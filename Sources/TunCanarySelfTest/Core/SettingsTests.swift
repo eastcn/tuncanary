@@ -338,7 +338,9 @@ enum DiagnosticsTests {
                 t.expectNotContains(text.lowercased(), "corp.example")
                 t.expectNotContains(text, "10.231")
                 t.expectNotContains(text, "/Users/")
-                t.expectNotContains(text, "tailnet")
+                t.expectNotContains(text, "example-tailnet")
+                t.expectNotContains(text, "ts.net")
+                t.expectContains(text, "家庭子网：未配置")
             },
             TestCase("诊断摘要：未配置内网") { t in
                 let summary = DiagnosticSummary(

@@ -42,6 +42,7 @@ public struct CLIVerdict: Sendable, Equatable {
     /// 本次告警使用的公开站点配置。
     public var configuredSites: [Site]
     public var intranet: IntranetProbeDecision
+    public var tailnet: TailnetProbeDecision
     public var faults: [Fault]
     public var reasons: [AssessmentReason]
 
@@ -56,12 +57,14 @@ public struct CLIVerdict: Sendable, Equatable {
         secondLocal: LocalAssessment?,
         siteResults: [SiteResult],
         intranet: IntranetProbeDecision,
+        tailnet: TailnetProbeDecision = .notConfigured,
         full: Bool,
         checkedAt: Date,
         configuredSites: [Site] = SiteCatalog.defaultSites
     ) -> CLIVerdict {
         build(firstLocal: firstLocal, secondLocal: secondLocal, siteResults: siteResults, incompleteSites: [],
-              intranet: intranet, full: full, checkedAt: checkedAt, configuredSites: configuredSites, timedOut: false)
+              intranet: intranet, tailnet: tailnet, full: full, checkedAt: checkedAt,
+              configuredSites: configuredSites, timedOut: false)
     }
 
     /// 整体超时（30 秒）：保留已完成的本机评估和站点结果，未完成的站点不计为失败。
@@ -73,13 +76,14 @@ public struct CLIVerdict: Sendable, Equatable {
         siteResults: [SiteResult],
         incompleteSites: [Site],
         intranet: IntranetProbeDecision,
+        tailnet: TailnetProbeDecision = .notConfigured,
         full: Bool,
         checkedAt: Date,
         configuredSites: [Site] = SiteCatalog.defaultSites
     ) -> CLIVerdict {
         build(firstLocal: firstLocal, secondLocal: secondLocal, siteResults: siteResults,
-              incompleteSites: incompleteSites, intranet: intranet, full: full, checkedAt: checkedAt,
-              configuredSites: configuredSites, timedOut: true)
+              incompleteSites: incompleteSites, intranet: intranet, tailnet: tailnet, full: full,
+              checkedAt: checkedAt, configuredSites: configuredSites, timedOut: true)
     }
 
     /// 整体超时且没有任何结论：退出码 3。
@@ -94,6 +98,7 @@ public struct CLIVerdict: Sendable, Equatable {
         siteResults: [SiteResult],
         incompleteSites: [Site],
         intranet: IntranetProbeDecision,
+        tailnet: TailnetProbeDecision,
         full: Bool,
         checkedAt: Date,
         configuredSites: [Site],
@@ -141,9 +146,11 @@ public struct CLIVerdict: Sendable, Equatable {
         }
 
         let intranetEligible = intranet.site != nil
+        let tailnetEligible = tailnet.site != nil
         var failing = Set<String>()
         for result in siteResults where result.site.isKey {
             if result.site.group == .intranet && !intranetEligible { continue }
+            if result.site.group == .tailnet && !tailnetEligible { continue }
             if siteFailed(result, full: full) { failing.insert(result.site.id) }
         }
         let context: FailureContext = full ? .fullCheck : .singleCheck
@@ -151,7 +158,7 @@ public struct CLIVerdict: Sendable, Equatable {
                                                        sites: configuredSites)
 
         var reasons = cards
-            .filter { $0.severity != .ok }
+            .filter { $0.severity != .ok && $0.countsTowardOverall }
             .sorted { lhs, rhs in
                 if lhs.severity != rhs.severity { return lhs.severity > rhs.severity }
                 return lhs.kind.reasonPriority < rhs.kind.reasonPriority
@@ -192,6 +199,7 @@ public struct CLIVerdict: Sendable, Equatable {
             incompleteSites: incompleteSites,
             configuredSites: configuredSites,
             intranet: intranet,
+            tailnet: tailnet,
             faults: localFaults + connectivity.map(\.fault),
             reasons: reasons
         )
@@ -255,15 +263,18 @@ public struct CLIVerdict: Sendable, Equatable {
         if full {
             var result: [Line] = []
             let allSites = siteResults.map(\.site) + incompleteSites
-            for group in SiteGroup.publicGroups(for: allSites) + [.intranet] {
+            for group in SiteGroup.publicGroups(for: allSites) + [.intranet, .tailnet] {
                 let sites = siteResults.filter { $0.site.group == group }
                 let pending = incompleteSites.filter { $0.group == group }
-                if group == .intranet {
-                    if let first = sites.first, intranet.site != nil {
+                if group.isConditional {
+                    let probed = group == .intranet ? intranet.site != nil : tailnet.site != nil
+                    let skipped = group == .intranet ? intranetSkipped
+                        : (tailnet == .notConfigured ? nil : tailnet.skippedText)
+                    if let first = sites.first, probed {
                         result.append(Line(tag: tag(for: [first]), text: "\(group.displayName)：\(first.summaryText)"))
                     } else if !pending.isEmpty {
                         result.append(Line(tag: tag(for: [], pending: pending), text: "\(group.displayName)：\(incomplete)"))
-                    } else if let skipped = intranetSkipped {
+                    } else if let skipped {
                         result.append(Line(tag: "[跳过]", text: "\(group.displayName)：\(skipped)"))
                     }
                     continue
@@ -278,9 +289,10 @@ public struct CLIVerdict: Sendable, Equatable {
 
         var segments: [String] = []
         var included: [SiteResult] = []
-        let pendingPublic = incompleteSites.filter { $0.group != .intranet }
+        let pendingPublic = incompleteSites.filter { !$0.group.isConditional }
         let pendingIntranet = incompleteSites.filter { $0.group == .intranet }
-        for result in siteResults where result.site.group != .intranet {
+        let pendingTailnet = incompleteSites.filter { $0.group == .tailnet }
+        for result in siteResults where !result.site.group.isConditional {
             segments.append("\(result.site.name) \(result.summaryText)")
             included.append(result)
         }
@@ -292,6 +304,14 @@ public struct CLIVerdict: Sendable, Equatable {
             segments.append("\(pending.name) \(incomplete)")
         } else if intranet != .notConfigured, let skipped = intranetSkipped {
             segments.append("内网站点 \(skipped)")
+        }
+        if let tailnetResult = siteResults.first(where: { $0.site.group == .tailnet }), tailnet.site != nil {
+            segments.append("\(tailnetResult.site.name) \(tailnetResult.summaryText)")
+            included.append(tailnetResult)
+        } else if let pending = pendingTailnet.first {
+            segments.append("\(pending.name) \(incomplete)")
+        } else if tailnet != .notConfigured, let skipped = tailnet.skippedText {
+            segments.append("\(SiteGroup.tailnet.displayName) \(skipped)")
         }
         guard !segments.isEmpty else { return [] }
         return [Line(tag: tag(for: included, pending: incompleteSites), text: segments.joined(separator: " / "))]
@@ -374,6 +394,12 @@ public struct CLIVerdict: Sendable, Equatable {
             var status: String
         }
 
+        /// 家庭子网：`status` 取值见 `TailnetProbeDecision.statusValue`。不含目标地址。
+        struct Tailnet: Encodable {
+            var configured: Bool
+            var status: String
+        }
+
         struct FaultItem: Encodable {
             var key: String
             var severity: String
@@ -402,6 +428,7 @@ public struct CLIVerdict: Sendable, Equatable {
         /// 整体超时时未完成的站点（不计为失败）。
         var incompleteSites: [PendingSite]
         var intranet: Intranet
+        var tailnet: Tailnet
         var faults: [FaultItem]
     }
 
@@ -460,6 +487,7 @@ public struct CLIVerdict: Sendable, Equatable {
                 JSONPayload.PendingSite(id: $0.id, name: $0.name, group: $0.group.rawValue)
             },
             intranet: JSONPayload.Intranet(configured: intranet != .notConfigured, status: intranetStatus),
+            tailnet: JSONPayload.Tailnet(configured: tailnet != .notConfigured, status: tailnet.statusValue),
             faults: faults.map {
                 JSONPayload.FaultItem(key: $0.key.rawValue, severity: $0.severity.rawValue, message: r($0.message))
             }

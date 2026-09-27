@@ -97,6 +97,7 @@ enum CLITests {
                 [正常] Clash TUN：配置开启，utun1024 存在
                 [正常] Mihomo DNS：7874 端口响应 8 ms
                 [正常] Example VPN：已断开
+                [正常] Tailnet：已连接（utun3）
                 [正常] 百度 可达 35 ms / Google 可达 180 ms / Claude 有响应（访问受限）
                 """
                 t.expectEqual(result.renderText(redactor: redactor), expected)
@@ -244,7 +245,10 @@ enum CLITests {
                 t.expectEqual(object["status"] as? String, "ok")
                 t.expectEqual(object["mode"] as? String, "light")
                 t.expectEqual(object["checkedAt"] as? String, "2026-09-26T12:00:00Z")
-                t.expectEqual((object["items"] as? [Any])?.count, 4)
+                t.expectEqual((object["items"] as? [Any])?.count, 5)
+                let tailnet = try t.require(object["tailnet"] as? [String: Any])
+                t.expectEqual(tailnet["configured"] as? Bool, false)
+                t.expectEqual(tailnet["status"] as? String, "notConfigured")
                 t.expectEqual((object["sites"] as? [Any])?.count, 4)
                 let intranet = try t.require(object["intranet"] as? [String: Any])
                 t.expectEqual(intranet["configured"] as? Bool, true)

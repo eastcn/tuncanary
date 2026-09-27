@@ -37,13 +37,16 @@ public struct DNSRecord: Sendable, Equatable {
     public var klass: UInt16
     public var ttl: UInt32
     public var data: [UInt8]
+    /// PTR 记录指向的名称（解析时展开压缩指针）；其他记录为 nil。
+    public var ptrName: String?
 
-    public init(name: String, type: UInt16, klass: UInt16, ttl: UInt32, data: [UInt8]) {
+    public init(name: String, type: UInt16, klass: UInt16, ttl: UInt32, data: [UInt8], ptrName: String? = nil) {
         self.name = name
         self.type = type
         self.klass = klass
         self.ttl = ttl
         self.data = data
+        self.ptrName = ptrName
     }
 
     /// A 记录（IN 类、4 字节数据）的地址；其他记录为 nil。
@@ -69,12 +72,18 @@ public struct DNSResponse: Sendable, Equatable {
     public var ipv4Answers: [IPv4] {
         answers.compactMap(\.ipv4)
     }
+
+    /// 回答段中第一条 PTR 记录指向的名称。
+    public var ptrAnswer: String? {
+        answers.first { $0.type == DNSMessage.typePTR }?.ptrName
+    }
 }
 
-/// 手写的最小 DNS 报文编解码：只编码单个问题的查询，只解析 A 记录应答，支持压缩指针。
+/// 手写的最小 DNS 报文编解码：只编码单个问题的查询，解析 A 与 PTR 记录应答，支持压缩指针。
 public enum DNSMessage {
     public static let typeA: UInt16 = 1
     public static let typeCNAME: UInt16 = 5
+    public static let typePTR: UInt16 = 12
     public static let classIN: UInt16 = 1
     static let headerLength = 12
     static let maxPointerJumps = 64
@@ -116,6 +125,11 @@ public enum DNSMessage {
         return bytes
     }
 
+    /// IPv4 地址的反查名，例如 `4.3.2.1.in-addr.arpa`。
+    public static func reverseName(_ address: IPv4) -> String {
+        address.octets.reversed().map(String.init).joined(separator: ".") + ".in-addr.arpa"
+    }
+
     // MARK: 解码
 
     /// 解析应答报文。任何字段在中途结束都抛出 `.truncated`。
@@ -145,8 +159,13 @@ public enum DNSMessage {
             let length = Int(try read16(bytes, &offset))
             guard offset + length <= bytes.count else { throw DNSMessageError.truncated }
             let data = Array(bytes[offset..<(offset + length)])
+            var ptrName: String?
+            if type == typePTR {
+                var nameOffset = offset
+                ptrName = try readName(bytes, &nameOffset)
+            }
             offset += length
-            answers.append(DNSRecord(name: name, type: type, klass: klass, ttl: ttl, data: data))
+            answers.append(DNSRecord(name: name, type: type, klass: klass, ttl: ttl, data: data, ptrName: ptrName))
         }
 
         return DNSResponse(

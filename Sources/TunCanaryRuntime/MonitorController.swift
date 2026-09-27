@@ -185,6 +185,7 @@ public final class MonitorController {
         // 只清零探测目标实际改变的站点；改名、改组和预期 DNS 不影响可达性计数。
         var retargeted = Self.retargetedSiteIDs(previous: previous.sites, current: settings.sites)
         if settings.intranetURL != previous.intranetURL { retargeted.insert(SiteCatalog.intranetID) }
+        if settings.tailnetTarget != previous.tailnetTarget { retargeted.insert(SiteCatalog.tailnetID) }
         tracker.reset(siteIDs: retargeted)
         retainCurrentHistory(settings: settings, previous: previous)
         // 取消旧周期，使保存后的下一次后台检查使用新间隔。
@@ -192,6 +193,7 @@ public final class MonitorController {
         if running { startTimers() }
         model.intranetDecision = SiteCatalog.intranetDecision(intranetURL: settings.intranetURL,
                                                               vpnState: .unconfirmed)
+        model.tailnetDecision = settings.tailnetTarget == nil ? .notConfigured : .unconfirmed
         restoreGraceIfNeeded()
         enqueue(.light)
     }
@@ -345,16 +347,19 @@ public final class MonitorController {
         let decision = SiteCatalog.intranetDecision(intranetURL: settings.intranetURL,
                                                     vpnState: local.vpnState)
         model.intranetDecision = decision
-        if decision.site == nil {
-            tracker.recordRound([], intranetEligible: false)
-            clearIntranetHistory()
+        let tailnet = local.tailnetDecision
+        model.tailnetDecision = tailnet
+        if decision.site == nil || tailnet.site == nil {
+            // 不满足条件的内网站点和家庭子网：计数清零，历史清除。
+            tracker.recordRound([], intranetEligible: decision.site != nil, tailnetEligible: tailnet.site != nil)
+            clearConditionalHistory(intranet: decision.site == nil, tailnet: tailnet.site == nil)
         }
 
         var results: [SiteResult] = []
         if kind != .local && !inGrace {
             let sites = kind == .full
-                ? SiteCatalog.fullCheckSites(intranet: decision, sites: settings.sites)
-                : SiteCatalog.lightProbeSites(intranet: decision, sites: settings.sites)
+                ? SiteCatalog.fullCheckSites(intranet: decision, tailnet: tailnet, sites: settings.sites)
+                : SiteCatalog.lightProbeSites(intranet: decision, tailnet: tailnet, sites: settings.sites)
             model.checkProgress = CheckProgress(kind: kind.progressKind, completed: 0, total: sites.count)
             results = await ProbeBatch(prober: prober).run(
                 sites: sites,
@@ -370,11 +375,11 @@ public final class MonitorController {
                 })
             guard isCurrent(version), results.count == sites.count else { return }
             model.siteHistory.record(results)
-            tracker.recordRound(results, intranetEligible: decision.site != nil)
+            tracker.recordRound(results, intranetEligible: decision.site != nil, tailnetEligible: tailnet.site != nil)
         }
 
         guard isCurrent(version) else { return }
-        let eligibleSites = settings.enabledSites + (decision.site.map { [$0] } ?? [])
+        let eligibleSites = settings.enabledSites + (decision.site.map { [$0] } ?? []) + (tailnet.site.map { [$0] } ?? [])
         let faults = inGrace ? [] : tracker.faults(sites: eligibleSites)
         model.apply(local: local, connectivityFaults: faults, checkedAt: clock.now())
         guard !inGrace else { return }
@@ -399,9 +404,11 @@ public final class MonitorController {
         running && !sleeping && version == generation && !Task.isCancelled
     }
 
-    private func clearIntranetHistory() {
+    private func clearConditionalHistory(intranet: Bool, tailnet: Bool) {
         var retained = SiteHistory(limit: model.siteHistory.limit)
-        for (id, results) in model.siteHistory.results where id != SiteCatalog.intranetID {
+        for (id, results) in model.siteHistory.results {
+            if intranet && id == SiteCatalog.intranetID { continue }
+            if tailnet && id == SiteCatalog.tailnetID { continue }
             retained.record(results)
         }
         model.siteHistory = retained
@@ -415,6 +422,8 @@ public final class MonitorController {
         for (id, results) in model.siteHistory.results {
             if id == SiteCatalog.intranetID {
                 if settings.intranetURL == previous.intranetURL { retained.record(results) }
+            } else if id == SiteCatalog.tailnetID {
+                if settings.tailnetTarget == previous.tailnetTarget { retained.record(results) }
             } else if let site = currentSites[id] {
                 retained.record(results.filter { Self.sameProbeTarget($0.site, site) }.map { result in
                     var renamed = result

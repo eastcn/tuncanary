@@ -16,6 +16,8 @@ public final class AppModel: ObservableObject {
     @Published public var siteHistory: SiteHistory
     /// 内网站点探测决策。
     @Published public var intranetDecision: IntranetProbeDecision
+    /// 家庭子网探测决策。
+    @Published public var tailnetDecision: TailnetProbeDecision
     /// 最近一次完成检查的时间。
     @Published public var lastCheckedAt: Date?
     /// 检查进度；nil 表示空闲。
@@ -88,6 +90,7 @@ public final class AppModel: ObservableObject {
         local: LocalAssessment? = nil,
         siteHistory: SiteHistory = SiteHistory(),
         intranetDecision: IntranetProbeDecision? = nil,
+        tailnetDecision: TailnetProbeDecision? = nil,
         lastCheckedAt: Date? = nil,
         checkProgress: CheckProgress? = nil,
         graceEndsAt: Date? = nil,
@@ -106,6 +109,7 @@ public final class AppModel: ObservableObject {
         self.siteHistory = siteHistory
         self.intranetDecision = intranetDecision
             ?? SiteCatalog.intranetDecision(intranetURL: settings.intranetURL, vpnState: local?.vpnState ?? .unconfirmed)
+        self.tailnetDecision = tailnetDecision ?? local?.tailnetDecision ?? .notConfigured
         self.lastCheckedAt = lastCheckedAt
         self.checkProgress = checkProgress
         self.graceEndsAt = graceEndsAt
@@ -148,7 +152,7 @@ public final class AppModel: ObservableObject {
     }
 
     public var siteGroups: [SiteGroupPresentation] {
-        PopoverFormatter.siteGroups(history: siteHistory, intranet: intranetDecision,
+        PopoverFormatter.siteGroups(history: siteHistory, intranet: intranetDecision, tailnet: tailnetDecision,
                                     redactor: redactor, sites: settings.enabledSites)
     }
 
@@ -246,6 +250,8 @@ public final class AppModel: ObservableObject {
         settingsDraft = SettingsDraft(settings: validated)
         intranetDecision = SiteCatalog.intranetDecision(intranetURL: validated.intranetURL,
                                                         vpnState: local?.vpnState ?? .unconfirmed)
+        // 目标改变后，等下一轮本机检查重新判断路由。
+        tailnetDecision = validated.tailnetTarget == nil ? .notConfigured : .unconfirmed
         actions.saveSettings(validated)
         showSavedFeedback()
         return true
@@ -313,6 +319,9 @@ public final class AppModel: ObservableObject {
         if let site = intranetDecision.site {
             entries.append(DiagnosticSummary.SiteEntry(site: site, history: siteHistory.recent(for: site.id)))
         }
+        if let site = tailnetDecision.site {
+            entries.append(DiagnosticSummary.SiteEntry(site: site, history: siteHistory.recent(for: site.id)))
+        }
         return DiagnosticSummary(
             generatedAt: generatedAt,
             appVersion: appVersion,
@@ -322,6 +331,8 @@ public final class AppModel: ObservableObject {
             sites: entries,
             intranetConfigured: settings.isIntranetConfigured,
             intranetSkippedText: intranetDecision.skippedText,
+            tailnetConfigured: settings.tailnetTarget != nil,
+            tailnetSkippedText: tailnetDecision.skippedText,
             events: recentEvents)
     }
 

@@ -31,6 +31,10 @@ public struct DiagnosticSummary: Sendable {
     public var intranetConfigured: Bool
     /// 内网站点未探测时的说明（未配置、未连接 VPN 等）。
     public var intranetSkippedText: String?
+    /// 是否配置了家庭子网目标。摘要中不写目标地址。
+    public var tailnetConfigured: Bool
+    /// 家庭子网未探测时的说明。
+    public var tailnetSkippedText: String?
     /// 最近的故障事件（旧 → 新）。
     public var events: [FaultEvent]
 
@@ -43,6 +47,8 @@ public struct DiagnosticSummary: Sendable {
         sites: [SiteEntry],
         intranetConfigured: Bool,
         intranetSkippedText: String? = nil,
+        tailnetConfigured: Bool = false,
+        tailnetSkippedText: String? = nil,
         events: [FaultEvent] = []
     ) {
         self.generatedAt = generatedAt
@@ -53,12 +59,14 @@ public struct DiagnosticSummary: Sendable {
         self.sites = sites
         self.intranetConfigured = intranetConfigured
         self.intranetSkippedText = intranetSkippedText
+        self.tailnetConfigured = tailnetConfigured
+        self.tailnetSkippedText = tailnetSkippedText
         self.events = events
     }
 
-    /// 由站点历史构造公开站点条目（内网站点另行传入）。
+    /// 由站点历史构造公开站点条目（内网站点和家庭子网另行传入）。
     public static func siteEntries(history: SiteHistory, sites: [Site] = SiteCatalog.defaultSites) -> [SiteEntry] {
-        sites.filter { $0.isEnabled && $0.group != .intranet }
+        sites.filter { $0.isEnabled && !$0.group.isConditional }
             .map { SiteEntry(site: $0, history: history.recent(for: $0.id)) }
     }
 
@@ -117,6 +125,13 @@ public struct DiagnosticSummary: Sendable {
             intranet += "（\(skipped)）"
         }
         lines.append(intranet)
+        var tailnet = "家庭子网：\(tailnetConfigured ? "已配置" : "未配置")"
+        if let entry = sites.first(where: { $0.site.group == .tailnet }), entry.latest != nil {
+            tailnet += "；" + Self.siteLine(entry, includeName: false)
+        } else if tailnetConfigured, let skipped = tailnetSkippedText {
+            tailnet += "（\(skipped)）"
+        }
+        lines.append(tailnet)
 
         if !events.isEmpty {
             lines.append("")

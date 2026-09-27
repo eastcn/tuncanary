@@ -14,6 +14,7 @@ public enum SnapshotItem: String, Sendable, CaseIterable {
     case canary
     case canaryIPv6
     case dnsGuard
+    case tailnet
 }
 
 /// 一轮采集的结果与耗时（秒），供诊断与性能核对。
@@ -30,6 +31,7 @@ public struct SnapshotCollectionReport: Sendable {
 /// - 各项并发采集：阻塞调用都放在 GCD 全局队列上，不占用 Swift 并发的协作线程。
 /// - 只读命令 `netstat -rn -f inet`、`scutil --dns` 每轮各调用一次，超时 3 秒。
 /// - Mihomo DNS 查询在读完 Clash 配置后发起（需要端口），超时 2 秒；系统解析 canary 的 A 与 AAAA 查询并行，各超时 3 秒。
+/// - 存在 Tailscale 隧道时检查 MagicDNS：反查超时 2 秒，随后的名称解析超时 3 秒。
 /// - 不抛错：每项失败写进快照对应字段。
 /// - 值类型，可在任意线程并发调用；canary 的“上一次未返回不再发起”状态在副本之间共享。
 public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
@@ -47,7 +49,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
         public var mihomoDNSHost: String
         /// 系统解析 canary 的超时（秒）。域名每轮取自 `proxySource`，代理 DNS 也查询同一个域名。
         public var canaryTimeout: TimeInterval
-        /// 是否执行系统解析 canary（测试中可关闭，避免访问网络）。
+        /// 是否执行系统解析 canary 和 MagicDNS 检查（测试中可关闭，避免访问网络）。
         public var resolvesCanary: Bool
         /// 是否查询 Mihomo DNS。
         public var probesMihomoDNS: Bool
@@ -88,6 +90,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
     private let now: @Sendable () -> Date
     private let runner: CommandRunner
     private let canary: SystemResolverCanary
+    private let magicDNS: MagicDNSProber
 
     /// - Parameters:
     ///   - configuration: 路径、超时与开关，默认使用当前用户和计划中的超时。
@@ -97,6 +100,8 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
         self.now = now
         self.runner = CommandRunner()
         self.canary = SystemResolverCanary(timeout: configuration.canaryTimeout)
+        self.magicDNS = MagicDNSProber(timeout: configuration.mihomoDNSTimeout,
+                                       resolveTimeout: configuration.canaryTimeout)
     }
 
     /// 以指定路径、适配器和代理来源创建（其余取默认值）。
@@ -134,6 +139,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
             config.dnsGuardPaths.map { DNSGuardReader(paths: $0).read() } ?? .notCollected
         }
         async let canaryIPv6Task = resolveCanaryIPv6(host: source.canaryHost)
+        async let tailnetTask = probeTailnet()
 
         // Mihomo DNS 依赖配置中的端口，读完配置后立即发起，与其余各项并行。
         let (clashConfig, clashDuration) = await clashTask
@@ -150,6 +156,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
         let (canaryResult, canaryDuration) = await canaryTask
         let (canaryIPv6Result, canaryIPv6Duration) = await canaryIPv6Task
         let (dnsGuard, guardDuration) = await guardTask
+        let (tailnet, tailnetDuration) = await tailnetTask
 
         let snapshot = LocalSnapshot(
             collectedAt: collectedAt,
@@ -169,7 +176,8 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
             canary: canaryResult,
             canaryIPv6: canaryIPv6Result,
             canaryHost: source.canaryHost,
-            dnsGuard: dnsGuard
+            dnsGuard: dnsGuard,
+            tailnet: tailnet
         )
         return SnapshotCollectionReport(
             snapshot: snapshot,
@@ -186,6 +194,7 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
                 .canary: canaryDuration,
                 .canaryIPv6: canaryIPv6Duration,
                 .dnsGuard: guardDuration,
+                .tailnet: tailnetDuration,
             ]
         )
     }
@@ -270,6 +279,13 @@ public struct SystemSnapshotProvider: LocalSnapshotProviding, Sendable {
         guard configuration.resolvesCanary else { return (.notTested, 0) }
         let start = Monotonic.now()
         let result = await canary.resolve(host: host)
+        return (result, Monotonic.now() - start)
+    }
+
+    private func probeTailnet() async -> (Collected<TailnetProbeSnapshot>, TimeInterval) {
+        guard configuration.resolvesCanary else { return (.notCollected, 0) }
+        let start = Monotonic.now()
+        let result = await magicDNS.probe()
         return (result, Monotonic.now() - start)
     }
 
