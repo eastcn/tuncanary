@@ -155,8 +155,12 @@ enum URLSessionSiteProberTests {
                 t.expectEqual(result.category, .reachable)
                 t.expectEqual(result.attempts.count, 3)
                 let median = try t.require(result.medianLatency)
-                // 中位数应为 0.04 附近（三次延迟排序后取中间值），容忍调度误差。
-                t.expect(median > 0.02 && median < 0.09, "延迟中位数异常：\(median)")
+                let latencies = try result.attempts.map { try t.require($0.latency) }.sorted()
+                t.expectEqual(median, latencies[1])
+                // CI 的共享 runner 可能延后桩回调；仅在本机检查绝对耗时。
+                if ProcessInfo.processInfo.environment["CI"] != "true" {
+                    t.expect(median > 0.02 && median < 0.09, "延迟中位数异常：\(median)")
+                }
             },
             TestCase("2 可达 1 失败 → 汇总可达（3 次至少 2 次门槛）") { t in
                 StubURLProtocol.reset()
