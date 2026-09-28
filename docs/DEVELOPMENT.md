@@ -17,7 +17,7 @@ SwiftPM 工程，`swift-tools-version:5.10`，平台 macOS 13，没有第三方�
 
 一轮检查的数据流：`SystemSnapshotProvider` 采集 `LocalSnapshot`，`LocalEvaluator` 得出 `LocalAssessment`（四张状态卡，有 Tailscale 时加一张 Tailnet 卡，以及故障列表），站点探测结果进入 `ConnectivityTracker`，两者合并为 `OverallAssessment`，再由 `NotificationDeduper` 决定是否通知，由 `FaultEventRecorder` 生成故障事件并经 `FaultEventStore` 写入本机日志（宽限期内两者都不调用）。
 
-出口监测使用独立数据流：`EgressIPChecker` 读取目标回显的 IP，`EgressGeoClient` 查询该 IP 的地域，`EgressMonitorState` 管理采样、缓存、冷却、变化比较和地域通知状态，`EgressHistoryStore` 原子写入本机历史。`AppModel` 防止取消后的迟到结果写回；保存使用递增版本，避免旧任务覆盖新状态。`MonitorController` 每 30 秒检查到期状态，每次最多自动采样一个目标，睡眠和网络切换宽限期内暂停。实际网络请求仍遵守每目标至少 5 分钟的间隔。
+出口监测使用独立数据流：`EgressIPChecker` 读取目标回显的 IP，`EgressGeoClient` 查询该 IP 的地域，`EgressMonitorState` 管理采样、缓存、冷却、变化比较和地域通知状态，`EgressHistoryStore` 原子写入本机历史。`AppModel` 防止取消后的迟到结果写回；保存使用递增版本，避免旧任务覆盖新状态。`MonitorController` 每 30 秒检查到期状态，每次最多自动采样一个目标，睡眠和网络切换宽限期内暂停。自动请求遵守每目标至少 5 分钟的间隔；手动检测立即触发并入库，不推迟自动计划，但仍遵守服务端限流与暂停状态。
 
 出口结果不参与 `OverallAssessment`、诊断摘要或命令行 JSON。测试通过注入 `URLProtocol`、地域服务、历史文件路径和虚拟时钟验证，不访问真实目标。
 

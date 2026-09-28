@@ -8,11 +8,49 @@ enum UIEgressIPTests {
             TestCase("各目标详情默认收起、独立展开，关闭重置且不影响后台采样") { t in
                 await disclosure(t)
             },
+            TestCase("手动检测不受自动间隔限制、连续点击入库且不推迟自动检测") { t in try await manualFeedback(t) },
             TestCase("按需检测、防重入、结果不进入诊断或总体状态") { t in try await onDemand(t) },
-            TestCase("地域缓存跨目标共用，手动不能绕过冷却，重启保留历史") { t in try await persistenceAndCache(t) },
+            TestCase("地域缓存跨目标和重启共用，手动检测入库") { t in try await persistenceAndCache(t) },
             TestCase("自定义端点、地域规则和自动间隔设置往返") { t in try await settingsRoundTrip(t) },
             TestCase("取消后迟到出口结果不写回") { t in try await cancelled(t) },
         ])
+    }
+
+    @MainActor
+    static func manualFeedback(_ t: TestContext) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("egress-manual-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = EgressHistoryStore(fileURL: directory.appendingPathComponent("history.json"))
+        var date = Date()
+        var state = EgressMonitorState()
+        var control = EgressControl()
+        control.lastAttempt = date
+        control.nextAttempt = date.addingTimeInterval(3600)
+        state.controls["cloudflare"] = control
+        _ = store.save(state)
+        let checker = HeldChecker()
+        let model = AppModel(now: { date }, egressChecker: checker, egressHistoryStore: store)
+        model.checkEgressIP(automatic: true)
+        t.expect(!model.isCheckingEgress, "自动检测仍遵守间隔")
+        for expected in 1...2 {
+            model.checkEgressIP()
+            t.expect(model.isCheckingEgress, "手动点击应立即触发，不能被自动间隔阻止")
+            guard model.isCheckingEgress else { return }
+            try await awaitStarted(checker, expected: expected)
+            await checker.finish(at: date)
+            try await awaitFinished(model)
+            t.expectEqual(store.load(at: date).history.count, expected, "每次手动检测都必须入库")
+            date = date.addingTimeInterval(1)
+        }
+        t.expectEqual(model.egressState.controls["cloudflare"]?.nextAttempt, control.nextAttempt, "手动检测不推迟自动检测时间")
+        let restarted = AppModel(now: { date }, egressChecker: checker,
+                                 egressHistoryStore: EgressHistoryStore(fileURL: store.fileURL))
+        restarted.checkEgressIP()
+        t.expect(restarted.isCheckingEgress, "重启后也允许立即手动检测")
+        try await awaitStarted(checker, expected: 3)
+        await checker.finish(at: date)
+        try await awaitFinished(restarted)
+        t.expectEqual(store.load(at: date).history.count, 3)
     }
 
     @MainActor
@@ -109,10 +147,6 @@ enum UIEgressIPTests {
         t.expectEqual(firstGeoCount, 1, "相同 IP 两个目标只查询一次")
         t.expectEqual(model.egressState.history.count, 2)
         t.expect(alerts.isEmpty)
-        model.checkEgressIP()
-        for _ in 0..<20 { await Task.yield() }
-        let firstCheckCount = await checker.count
-        t.expectEqual(firstCheckCount, 1, "手动按钮不能绕过冷却")
         date = date.addingTimeInterval(301)
         model.checkEgressIP()
         try await awaitStarted(checker, expected: 2)
@@ -125,10 +159,14 @@ enum UIEgressIPTests {
                                  egressHistoryStore: EgressHistoryStore(fileURL: url))
         t.expectEqual(restarted.egressState.history.count, 4)
         t.expect(restarted.egressState.regionAlerts["claude"]?.active == true)
+        date = date.addingTimeInterval(1)
         restarted.checkEgressIP()
-        for _ in 0..<20 { await Task.yield() }
-        let finalCheckCount = await checker.count
-        t.expectEqual(finalCheckCount, 2, "重启不能绕过冷却")
+        try await awaitStarted(checker, expected: 3)
+        await checker.finish(at: date)
+        try await awaitFinished(restarted)
+        t.expectEqual(restarted.egressState.history.count, 6)
+        let finalGeoCount = await geo.count
+        t.expectEqual(finalGeoCount, 1, "重启后仍共用地域缓存")
     }
 
     @MainActor

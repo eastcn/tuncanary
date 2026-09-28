@@ -29,7 +29,7 @@ struct EgressIPSection: View {
                     Button(model.egressResults.isEmpty ? "检测" : "重新检测") { model.checkEgressIP() }
                         .buttonStyle(PillButtonStyle(compact: true))
                         .disabled(model.egressChecker == nil)
-                        .help("检测已到期的目标；手动与自动共用间隔及限流冷却")
+                        .help("立即检测并写入历史；不受自动间隔限制，服务端限流冷却仍生效")
                 }
             }
             .padding(.leading, 2)
@@ -53,8 +53,15 @@ struct EgressIPSection: View {
                     }
                 }
             }
-            Text("本机历史保留 30 天 · \(model.settings.egressMonitoring.automatic ? "自动检测" : "手动检测") · \(Int(model.settings.egressMonitoring.effectiveInterval / 60)) 分钟间隔")
+            Text("本机历史保留 30 天 · \(model.settings.egressMonitoring.automatic ? "自动检测间隔 \(Int(model.settings.egressMonitoring.effectiveInterval / 60)) 分钟" : "仅手动检测")")
                 .font(Typography.caption).foregroundColor(.secondary)
+            if let feedback = model.egressCheckFeedback {
+                Text(feedback)
+                    .font(Typography.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
             if let error = model.egressPersistenceError { ErrorText(text: error) }
         }
         .sheet(item: $historyTarget) { selected in EgressHistoryView(model: model, target: selected.target) }
@@ -167,7 +174,7 @@ struct EgressStabilityRow: View {
                         Text("自动检测已暂停").foregroundColor(StatusTone.warning.textColor)
                         Button("恢复") { model.resumeEgressTarget(target) }.buttonStyle(.plain)
                     } else if let next = control?.nextAttempt, next > model.now() {
-                        Text("下次允许检测：\(next.formatted(date: .omitted, time: .standard))")
+                        Text("下次自动检测：\(next.formatted(date: .omitted, time: .standard))")
                     }
                     Spacer()
                     Button("历史", action: showHistory).buttonStyle(.plain)

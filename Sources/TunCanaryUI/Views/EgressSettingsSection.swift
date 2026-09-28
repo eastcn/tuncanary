@@ -29,7 +29,7 @@ struct EgressTargetsSection: View {
                     SettingsSwitch(label: "自动检测出口", isOn: $model.settingsDraft.egressAutomatic)
                 }
                 FormFieldRow(label: "检测间隔（分钟）", placeholder: "5", text: $model.settingsDraft.egressIntervalMinutes,
-                             caption: "5–1440 分钟；手动检测同样遵守间隔和限流冷却。", error: validation.egressMonitoringError)
+                             caption: "自动检测间隔为 5–1440 分钟；手动检测立即触发并入库，服务端限流冷却仍生效。", error: validation.egressMonitoringError)
                 FormRow(label: "IP 变化通知", caption: "默认只记录；地域越界连续两次确认后通知，恢复再通知") {
                     SettingsSwitch(label: "IP 变化通知", isOn: $model.settingsDraft.egressNotifyIPChanges)
                 }

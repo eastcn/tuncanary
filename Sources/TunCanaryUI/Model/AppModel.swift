@@ -36,6 +36,8 @@ public final class AppModel: ObservableObject {
     /// 出口监测独立于总体健康判断和脱敏诊断导出。
     @Published public internal(set) var egressResults: [EgressIPResult] = []
     @Published public internal(set) var isCheckingEgress = false
+    /// 手动检测的状态反馈，包含不能发起检测的原因。
+    @Published public internal(set) var egressCheckFeedback: String?
     /// 各目标详情默认收起；关闭弹窗后重置，后台采样不受影响。
     @Published public var expandedEgressTargets: Set<EgressIPTarget> = []
     public var egressChecker: (any EgressIPChecking)?

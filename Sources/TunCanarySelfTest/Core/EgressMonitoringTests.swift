@@ -60,6 +60,22 @@ enum EgressMonitoringTests {
                 state.resume(.claude)
                 t.expect(state.isEligible(.claude, at: start.addingTimeInterval(86400), interval: 300))
             },
+            TestCase("手动跳过普通间隔，但遵守 429 与 403；旧限流记录兼容") { t in
+                var state = EgressMonitorState(); let config = EgressMonitoringSettings()
+                state.begin(.claude, at: start)
+                _ = state.record(sample(0), settings: config)
+                t.expect(state.isManuallyEligible(.claude, at: start.addingTimeInterval(1)))
+                t.expect(!state.isEligible(.claude, at: start.addingTimeInterval(1), interval: 300))
+                _ = state.record(sample(1, failure: .httpStatus(429), retryAfter: start.addingTimeInterval(1800)), settings: config, automatic: false)
+                t.expect(!state.isManuallyEligible(.claude, at: start.addingTimeInterval(300)))
+                state.controls["claude"]?.manualNextAttempt = nil
+                t.expect(!state.isManuallyEligible(.claude, at: start.addingTimeInterval(300)), "兼容升级前的 429 历史")
+                t.expect(state.isManuallyEligible(.claude, at: start.addingTimeInterval(1800)))
+                _ = state.record(sample(1800, failure: .httpStatus(403)), settings: config, automatic: false)
+                t.expect(!state.isManuallyEligible(.claude, at: start.addingTimeInterval(86400)))
+                state.resume(.claude)
+                t.expect(state.isManuallyEligible(.claude, at: start.addingTimeInterval(86400)))
+            },
             TestCase("30 天到期清理，重启保留历史和告警冷却；写入失败可见") { t in
                 let directory = FileManager.default.temporaryDirectory.appendingPathComponent("egress-test-\(UUID().uuidString)")
                 defer { try? FileManager.default.removeItem(at: directory) }

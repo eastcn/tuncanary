@@ -75,6 +75,8 @@ public struct EgressObservation: Codable, Equatable, Sendable {
 public struct EgressControl: Codable, Equatable, Sendable {
     public var nextAttempt: Date?
     public var lastAttempt: Date?
+    /// 服务端限流冷却；普通自动采样间隔不约束手动检测。
+    public var manualNextAttempt: Date?
     public var failures = 0
     public var suspended = false
     public init() {}
@@ -121,7 +123,22 @@ public struct EgressMonitorState: Codable, Equatable, Sendable {
         return date >= earliest
     }
 
-    public mutating func begin(_ target: EgressIPTarget, at date: Date) {
+    public func manualCooldownUntil(_ target: EgressIPTarget) -> Date? {
+        if let date = controls[target.rawValue]?.manualNextAttempt { return date }
+        // 兼容旧历史：429 的冷却不能因升级而丢失。
+        if let latest = history.last(where: { $0.result.target == target }), latest.result.failure == .httpStatus(429) {
+            return max(controls[target.rawValue]?.nextAttempt ?? .distantPast,
+                       latest.result.retryAfter ?? latest.result.checkedAt.addingTimeInterval(300))
+        }
+        return nil
+    }
+
+    public func isManuallyEligible(_ target: EgressIPTarget, at date: Date) -> Bool {
+        controls[target.rawValue]?.suspended != true && date >= (manualCooldownUntil(target) ?? .distantPast)
+    }
+
+    public mutating func begin(_ target: EgressIPTarget, at date: Date, automatic: Bool = true) {
+        guard automatic else { return }
         var control = controls[target.rawValue] ?? EgressControl()
         control.lastAttempt = date
         controls[target.rawValue] = control
@@ -132,7 +149,7 @@ public struct EgressMonitorState: Codable, Equatable, Sendable {
         controls[target.rawValue]?.suspended = false
     }
 
-    public mutating func record(_ observation: EgressObservation, settings: EgressMonitoringSettings) -> [EgressAlert] {
+    public mutating func record(_ observation: EgressObservation, settings: EgressMonitoringSettings, automatic: Bool = true) -> [EgressAlert] {
         let result = observation.result
         let key = result.target.rawValue
         let now = result.checkedAt
@@ -143,16 +160,26 @@ public struct EgressMonitorState: Codable, Equatable, Sendable {
             alerts.append(EgressAlert(target: result.target, kind: .ipChanged))
         }
         var control = controls[key] ?? EgressControl()
-        control.lastAttempt = control.lastAttempt ?? now
-        if result.isSuccess {
-            control.failures = 0
-            control.nextAttempt = now.addingTimeInterval(interval)
-        } else {
-            control.failures = min(8, control.failures + 1)
-            let backoff = min(6 * 3600, interval * pow(2, Double(control.failures - 1)))
-            control.nextAttempt = max(now.addingTimeInterval(backoff), result.retryAfter ?? .distantPast)
-            if result.failure == .httpStatus(403) || result.failure == .challenge { control.suspended = true }
+        if automatic {
+            control.lastAttempt = control.lastAttempt ?? now
+            if result.isSuccess {
+                control.failures = 0
+                control.nextAttempt = now.addingTimeInterval(interval)
+            } else {
+                control.failures = min(8, control.failures + 1)
+                let backoff = min(6 * 3600, interval * pow(2, Double(control.failures - 1)))
+                control.nextAttempt = max(now.addingTimeInterval(backoff), result.retryAfter ?? .distantPast)
+            }
         }
+        if result.isSuccess {
+            control.manualNextAttempt = nil
+        } else if result.failure == .httpStatus(429) {
+            let backoff = min(6 * 3600, interval * pow(2, Double(max(0, control.failures - 1))))
+            let next = max(now.addingTimeInterval(backoff), result.retryAfter ?? .distantPast)
+            control.manualNextAttempt = next
+            control.nextAttempt = max(control.nextAttempt ?? .distantPast, next)
+        }
+        if result.failure == .httpStatus(403) || result.failure == .challenge { control.suspended = true }
         controls[key] = control
         let allowed = settings.allowedRegions[key] ?? []
         var region = regionAlerts[key] ?? EgressRegionAlertState()
