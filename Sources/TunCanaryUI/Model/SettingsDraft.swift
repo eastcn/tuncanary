@@ -59,10 +59,22 @@ public struct SettingsDraft: Sendable, Equatable {
     public struct EgressHostDraft: Sendable, Equatable, Identifiable {
         public let id: UUID
         public var host: String
+        public var name: String
+        public var method: EgressEndpoint.Method?
+        public var selector: String
 
-        public init(host: String = "") {
-            id = UUID()
-            self.host = host
+        public init(host: String = "", name: String = "", method: EgressEndpoint.Method? = nil, selector: String = "") {
+            id = UUID(); self.host = host; self.name = name; self.method = method; self.selector = selector
+        }
+        public init(target: EgressIPTarget) {
+            if let endpoint = target.endpoint {
+                self.init(host: endpoint.url.absoluteString, name: endpoint.name, method: endpoint.method, selector: endpoint.selector)
+            } else { self.init(host: target.host) }
+        }
+        public var target: EgressIPTarget? {
+            guard let method else { return EgressIPTarget.custom(host) }
+            guard let url = URL(string: host) else { return nil }
+            return EgressIPTarget.endpoint(EgressEndpoint(name: name, url: url, method: method, selector: selector))
         }
     }
 
@@ -96,8 +108,15 @@ public struct SettingsDraft: Sendable, Equatable {
         get { enabledEgressBuiltIns.contains(.claude) }
         set { setEgressBuiltIn(.claude, enabled: newValue) }
     }
-    /// 自定义出口检测域名（经 Cloudflare 的站点）。
+    /// 自定义出口检测域名或 HTTPS 回显端点。
     public var customEgressHosts: [EgressHostDraft]
+    public var egressAutomatic: Bool
+    public var egressIntervalMinutes: String
+    public var egressNotifyIPChanges: Bool
+    public var egressAllowedRegions: [String: Set<String>]
+    public var draftEgressTargets: [EgressIPTarget] {
+        EgressIPTarget.builtIns.filter { $0 == .cloudflare || enabledEgressBuiltIns.contains($0) } + customEgressHosts.compactMap(\.target)
+    }
     public var notificationsEnabled: Bool
     public var localCheckInterval: String
     public var lightProbeInterval: String
@@ -114,6 +133,7 @@ public struct SettingsDraft: Sendable, Equatable {
         canaryHost: String = PulseConstants.canaryHost,
         checkPages: [CheckPage] = [],
         egressTargets: [EgressIPTarget] = AppSettings.defaultEgressTargets,
+        egressMonitoring: EgressMonitoringSettings = EgressMonitoringSettings(),
         notificationsEnabled: Bool,
         localCheckInterval: String = "20",
         lightProbeInterval: String = "120",
@@ -136,7 +156,11 @@ public struct SettingsDraft: Sendable, Equatable {
         self.checkPages = checkPages.map { CheckPageDraft(name: $0.name, url: $0.url.absoluteString) }
         let effective = AppSettings(egressTargets: egressTargets).effectiveEgressTargets
         self.enabledEgressBuiltIns = Set(effective.filter { $0.isBuiltIn && $0 != .cloudflare })
-        self.customEgressHosts = effective.filter { !$0.isBuiltIn }.map { EgressHostDraft(host: $0.host) }
+        self.customEgressHosts = effective.filter { !$0.isBuiltIn }.map(EgressHostDraft.init(target:))
+        self.egressAutomatic = egressMonitoring.automatic
+        self.egressIntervalMinutes = Self.intervalText(egressMonitoring.effectiveInterval / 60)
+        self.egressNotifyIPChanges = egressMonitoring.notifyIPChanges
+        self.egressAllowedRegions = egressMonitoring.allowedRegions
         self.notificationsEnabled = notificationsEnabled
         self.localCheckInterval = localCheckInterval
         self.lightProbeInterval = lightProbeInterval
@@ -156,6 +180,7 @@ public struct SettingsDraft: Sendable, Equatable {
             canaryHost: settings.canaryHost,
             checkPages: settings.checkPages,
             egressTargets: settings.effectiveEgressTargets,
+            egressMonitoring: settings.egressMonitoring,
             notificationsEnabled: settings.notificationsEnabled,
             localCheckInterval: Self.intervalText(settings.localCheckInterval),
             lightProbeInterval: Self.intervalText(settings.lightProbeInterval),
@@ -208,7 +233,7 @@ public struct SettingsDraft: Sendable, Equatable {
             return "“\(trimmed)”不是有效的域名（例如 chatgpt.com）"
         }
         if let builtIn = target.matchingBuiltIn { return Self.builtInHostMessage(builtIn) }
-        let existing = customEgressHosts.compactMap { EgressIPTarget.custom($0.host)?.host }
+        let existing = customEgressHosts.filter { $0.method == nil }.compactMap { EgressIPTarget.custom($0.host)?.host }
         guard !existing.contains(target.host) else { return "“\(target.host)”已在出口检测目标中" }
         customEgressHosts.append(EgressHostDraft(host: target.host))
         return nil
@@ -236,6 +261,7 @@ public struct SettingsDraft: Sendable, Equatable {
         public var checkPageErrors: [Int: String] = [:]
         /// 按自定义出口域名行下标的错误。
         public var egressHostErrors: [Int: String] = [:]
+        public var egressMonitoringError: String?
         public var localCheckIntervalError: String?
         public var lightProbeIntervalError: String?
         public var siteCountError: String?
@@ -249,7 +275,7 @@ public struct SettingsDraft: Sendable, Equatable {
         public var tabsWithErrors: Set<SettingsTab> {
             var tabs: Set<SettingsTab> = []
             if intranetURLError != nil || tailnetTargetError != nil || !checkPageErrors.isEmpty ||
-                !egressHostErrors.isEmpty ||
+                !egressHostErrors.isEmpty || egressMonitoringError != nil ||
                 siteCountError != nil || !siteErrors.isEmpty {
                 tabs.insert(.sites)
             }
@@ -324,16 +350,16 @@ public struct SettingsDraft: Sendable, Equatable {
         var egressHosts = Set<String>()
         for (index, draft) in customEgressHosts.enumerated() {
             let text = draft.host.trimmingCharacters(in: .whitespacesAndNewlines)
-            if let target = EgressIPTarget.custom(text) {
+            if let target = draft.target {
                 if let builtIn = target.matchingBuiltIn {
                     validation.egressHostErrors[index] = Self.builtInHostMessage(builtIn)
-                } else if egressHosts.insert(target.host).inserted {
+                } else if egressHosts.insert(target.endpoint == nil ? target.host : target.rawValue).inserted {
                     customEgress.append(target)
                 } else {
                     validation.egressHostErrors[index] = "“\(target.host)”已在出口检测目标中"
                 }
             } else {
-                validation.egressHostErrors[index] = "“\(text)”不是有效的域名（例如 chatgpt.com）"
+                validation.egressHostErrors[index] = draft.method == nil ? "“\(text)”不是有效的域名（例如 chatgpt.com）" : "回显接口需要名称、HTTPS URL 和有效的响应头或 JSON 字段路径"
             }
         }
         let host = canaryHost.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -353,6 +379,15 @@ public struct SettingsDraft: Sendable, Equatable {
         let (lightInterval, lightError) = interval(lightProbeInterval, range: 15...86400, label: "后台站点检测间隔")
         validation.localCheckIntervalError = localError
         validation.lightProbeIntervalError = lightError
+        var monitoring = EgressMonitoringSettings()
+        monitoring.automatic = egressAutomatic
+        monitoring.notifyIPChanges = egressNotifyIPChanges
+        if let minutes = Int(egressIntervalMinutes), (5...1440).contains(minutes) {
+            monitoring.interval = TimeInterval(minutes * 60)
+        } else { validation.egressMonitoringError = "出口检测间隔须为 5–1440 分钟的整数" }
+        let targetKeys = Set(draftEgressTargets.map(\.rawValue))
+        monitoring.allowedRegions = egressAllowedRegions.filter { targetKeys.contains($0.key) && !$0.value.isEmpty }
+        if !monitoring.isValid { validation.egressMonitoringError = "允许地域含无效的国家和地区" }
 
         if sites.count > 20 { validation.siteCountError = "公开站点最多 20 个" }
         var seenIDs = Set<String>()
@@ -393,7 +428,7 @@ public struct SettingsDraft: Sendable, Equatable {
            validation.expectedDNSError == nil &&
            (proxyClient != .manual || manualErrors.isEmpty) && validation.canaryHostError == nil &&
            validation.checkPageErrors.isEmpty && checkPages.count <= AppSettings.maxCheckPages &&
-           validation.egressHostErrors.isEmpty && customEgressHosts.count <= EgressIPTarget.maxCustom &&
+           validation.egressHostErrors.isEmpty && validation.egressMonitoringError == nil && customEgressHosts.count <= EgressIPTarget.maxCustom &&
            localError == nil && lightError == nil &&
            validation.siteCountError == nil && validation.siteErrors.isEmpty,
            let localInterval, let lightInterval {
@@ -409,6 +444,7 @@ public struct SettingsDraft: Sendable, Equatable {
                 checkPages: pages,
                 egressTargets: EgressIPTarget.builtIns.filter { $0 == .cloudflare || enabledEgressBuiltIns.contains($0) }
                     + customEgress,
+                egressMonitoring: monitoring,
                 notificationsEnabled: notificationsEnabled,
                 localCheckInterval: TimeInterval(localInterval),
                 lightProbeInterval: TimeInterval(lightInterval),

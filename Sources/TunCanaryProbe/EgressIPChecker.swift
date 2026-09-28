@@ -2,13 +2,15 @@ import Darwin
 import Foundation
 import TunCanaryCore
 
-private enum EgressResponse: Sendable {
+enum EgressResponse: Sendable {
     case body(Data)
+    case header(String)
+    case rateLimited(Date?)
     case failure(EgressIPFailure)
 }
 
 /// 单个 trace 请求的生命周期。URLSession 回调、取消和看门狗只允许完成一次。
-private final class EgressRequest: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+final class EgressRequest: NSObject, URLSessionDataDelegate, @unchecked Sendable {
     private static let maximumBodyBytes = 16 * 1024
 
     private let lock = NSLock()
@@ -17,10 +19,12 @@ private final class EgressRequest: NSObject, URLSessionDataDelegate, @unchecked 
     private var task: URLSessionDataTask?
     private var watchdog: Task<Void, Never>?
     private var body = Data()
+    private var headerNames: [String] = []
     private var finished = false
     private var cancelled = false
 
-    func run(url: URL, configuration: URLSessionConfiguration, timeout: TimeInterval) async -> EgressResponse {
+    func run(url: URL, configuration: URLSessionConfiguration, timeout: TimeInterval, headerNames: [String] = []) async -> EgressResponse {
+        self.headerNames = headerNames
         // configurationFactory 每次须返回新配置；保留测试注入的 protocolClasses。
         configuration.timeoutIntervalForRequest = timeout
         configuration.timeoutIntervalForResource = timeout
@@ -42,7 +46,7 @@ private final class EgressRequest: NSObject, URLSessionDataDelegate, @unchecked 
                 let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
                 var request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData,
                                          timeoutInterval: timeout)
-                request.httpMethod = "GET"
+                request.httpMethod = headerNames.isEmpty ? "GET" : "HEAD"
                 request.httpShouldHandleCookies = false
                 let task = session.dataTask(with: request)
                 self.session = session
@@ -71,6 +75,18 @@ private final class EgressRequest: NSObject, URLSessionDataDelegate, @unchecked 
             lock.unlock()
             if ready { finish(.failure(.cancelled)) }
         })
+    }
+
+    static func retryDate(_ text: String?) -> Date? {
+        guard let text else { return nil }
+        if let seconds = Double(text.trimmingCharacters(in: .whitespaces)), seconds.isFinite, seconds >= 0 {
+            return Date().addingTimeInterval(min(seconds, 365 * 86400))
+        }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss z"
+        return formatter.date(from: text)
     }
 
     private func finish(_ result: EgressResponse) {
@@ -116,9 +132,26 @@ private final class EgressRequest: NSObject, URLSessionDataDelegate, @unchecked 
             finish(.failure(.redirect))
             return
         }
+        if http.statusCode == 429 {
+            completionHandler(.cancel)
+            finish(.rateLimited(Self.retryDate(http.value(forHTTPHeaderField: "Retry-After"))))
+            return
+        }
         guard http.statusCode == 200 else {
             completionHandler(.cancel)
             finish(.failure(.httpStatus(http.statusCode)))
+            return
+        }
+        if http.value(forHTTPHeaderField: "cf-mitigated")?.lowercased() == "challenge" {
+            completionHandler(.cancel)
+            finish(.failure(.challenge))
+            return
+        }
+        if !headerNames.isEmpty {
+            completionHandler(.cancel)
+            if let ip = headerNames.compactMap({ http.value(forHTTPHeaderField: $0) }).first {
+                finish(.header(ip.trimmingCharacters(in: .whitespacesAndNewlines)))
+            } else { finish(.failure(.missingIP)) }
             return
         }
         if response.expectedContentLength > Int64(Self.maximumBodyBytes) {
@@ -162,7 +195,7 @@ private final class EgressRequest: NSObject, URLSessionDataDelegate, @unchecked 
     }
 }
 
-/// 按需并发请求各目标（Cloudflare trace 或淘宝 IP 库），由目标回显本应用请求的出口 IP。
+/// 单轮并发请求各目标的 trace、响应头或 JSON，由目标回显本应用请求的出口 IP。
 public struct EgressIPChecker: EgressIPChecking, Sendable {
     public typealias ConfigurationFactory = @Sendable () -> URLSessionConfiguration
 
@@ -188,15 +221,29 @@ public struct EgressIPChecker: EgressIPChecking, Sendable {
 
     private func inspect(_ target: EgressIPTarget) async -> EgressIPResult {
         let response = await EgressRequest().run(
-            url: target.url, configuration: configurationFactory(), timeout: timeout
+            url: target.url, configuration: configurationFactory(), timeout: timeout,
+            headerNames: target.format == .responseHeader ? (target.endpoint.map { [$0.selector] } ?? ["x-request-ip", "x-response-cinfo"]) : []
         )
         let checkedAt = Date()
         switch response {
         case .failure(let failure):
             return EgressIPResult(target: target, checkedAt: checkedAt, ip: nil, ipVersion: nil,
                                   location: nil, failure: failure)
+        case .rateLimited(let retryAfter):
+            return EgressIPResult(target: target, checkedAt: checkedAt, ip: nil, ipVersion: nil,
+                                  location: nil, failure: .httpStatus(429), retryAfter: retryAfter)
+        case .header(let ip):
+            return Self.result(Self.classify(ip, location: nil), target: target, at: checkedAt)
         case .body(let body):
-            let parsed = target.format == .taobaoIPInfo ? Self.parseTaobao(body) : Self.parse(body)
+            if Self.isChallenge(body) {
+                return Self.result(.failure(.challenge), target: target, at: checkedAt)
+            }
+            let parsed: ParsedTrace
+            switch target.format {
+            case .taobaoIPInfo: parsed = Self.parseTaobao(body)
+            case .jsonField: parsed = Self.parseJSON(body, selector: target.endpoint?.selector ?? "ip")
+            default: parsed = Self.parse(body)
+            }
             switch parsed {
             case .success(let ip, let version, let location):
                 return EgressIPResult(target: target, checkedAt: checkedAt, ip: ip, ipVersion: version,
@@ -208,9 +255,33 @@ public struct EgressIPChecker: EgressIPChecking, Sendable {
         }
     }
 
+    private static func result(_ parsed: ParsedTrace, target: EgressIPTarget, at date: Date) -> EgressIPResult {
+        switch parsed {
+        case .success(let ip, let version, let location):
+            return EgressIPResult(target: target, checkedAt: date, ip: ip, ipVersion: version, location: location, failure: nil)
+        case .failure(let failure):
+            return EgressIPResult(target: target, checkedAt: date, ip: nil, ipVersion: nil, location: nil, failure: failure)
+        }
+    }
+
+    private static func parseJSON(_ body: Data, selector: String) -> ParsedTrace {
+        guard var value = try? JSONSerialization.jsonObject(with: body) else { return .failure(.invalidResponse) }
+        for part in selector.split(separator: ".") {
+            guard let object = value as? [String: Any], let next = object[String(part)] else { return .failure(.missingIP) }
+            value = next
+        }
+        guard let ip = value as? String else { return .failure(.invalidIP) }
+        return classify(ip, location: nil)
+    }
+
     private enum ParsedTrace {
         case success(String, EgressIPVersion, String?)
         case failure(EgressIPFailure)
+    }
+
+    private static func isChallenge(_ body: Data) -> Bool {
+        let lower = String(decoding: body, as: UTF8.self).lowercased()
+        return lower.contains("<html") && (lower.contains("challenge") || lower.contains("just a moment") || lower.contains("captcha"))
     }
 
     private static func parse(_ body: Data) -> ParsedTrace {
@@ -264,16 +335,27 @@ public struct EgressIPChecker: EgressIPChecking, Sendable {
         return classify(ip, location: parts.isEmpty ? nil : parts.joined(separator: " · "))
     }
 
+    private static func canonicalIP(_ family: Int32, _ address: UnsafeRawPointer) -> String? {
+        var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+        guard inet_ntop(family, address, &buffer, socklen_t(buffer.count)) != nil else { return nil }
+        return String(cString: buffer)
+    }
+
+    static func normalizedIP(_ ip: String) -> String? {
+        if case .success(let normalized, _, _) = classify(ip, location: nil) { return normalized }
+        return nil
+    }
+
     private static func classify(_ ip: String, location: String?) -> ParsedTrace {
         // inet_pton 接收 C 字符串；嵌入 NUL 会让后缀被忽略，必须先拒绝。
         guard !ip.utf8.contains(0) else { return .failure(.invalidIP) }
         var ipv4 = in_addr()
         if ip.withCString({ inet_pton(AF_INET, $0, &ipv4) }) == 1 {
-            return .success(ip, .ipv4, location)
+            return .success(withUnsafePointer(to: &ipv4) { canonicalIP(AF_INET, $0) } ?? ip, .ipv4, location)
         }
         var ipv6 = in6_addr()
         if ip.withCString({ inet_pton(AF_INET6, $0, &ipv6) }) == 1 {
-            return .success(ip, .ipv6, location)
+            return .success(withUnsafePointer(to: &ipv6) { canonicalIP(AF_INET6, $0) } ?? ip, .ipv6, location)
         }
         return .failure(.invalidIP)
     }

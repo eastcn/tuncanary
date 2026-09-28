@@ -66,6 +66,7 @@ public final class MonitorController {
     private var activeTask: Task<Void, Never>?
     private var queuedCheck: CheckKind?
     private var localTimer: Task<Void, Never>?
+    private var egressTimer: Task<Void, Never>?
     private var lightTimer: Task<Void, Never>?
     private var graceTimer: Task<Void, Never>?
     private var sleepFallback: Task<Void, Never>?
@@ -110,12 +111,27 @@ public final class MonitorController {
         self.clock = clock
         model.adapterSet = initialAdapters
         self.activeSettings = model.settings
+        model.deliverEgressAlert = { [weak model, weak notifier] alert in
+            guard let model, let notifier else { return }
+            let title: String
+            switch alert.kind {
+            case .ipChanged: title = "出口 IP 已变化"
+            case .regionViolation: title = "出口地域超出允许范围"
+            case .regionRecovered: title = "出口地域已恢复"
+            }
+            let place = alert.countryCode.map(EgressRegions.name) ?? ""
+            let body = model.redactor.redact("\(alert.target.displayName)（\(alert.target.host)）\(place.isEmpty ? "" : "：" + place)")
+            await notifier.deliver(PendingNotification(key: FaultKey(rawValue: "egress." + UUID().uuidString),
+                                                       severity: alert.kind == .regionViolation ? .warning : .ok,
+                                                       title: title, body: body))
+        }
     }
 
     public func start() {
         guard !running else { return }
         running = true
         sleeping = false
+        model.pauseEgressMonitoring(false)
         recorder = FaultEventRecorder()
         if let eventStore { model.recentEvents = eventStore.recent(limit: AppModel.recentEventLimit) }
         record([FaultEvent(date: clock.now(), kind: .started)])
@@ -123,6 +139,8 @@ public final class MonitorController {
             Task { @MainActor [weak self] in self?.handle(event) }
         }
         startTimers()
+        Task { [weak model] in await model?.maintainEgressHistory() }
+        model.checkEgressIP(automatic: true)
         enqueue(.light)
         Task { [weak self] in
             guard let self else { return }
@@ -140,6 +158,7 @@ public final class MonitorController {
     public func stop() {
         guard running else { return }
         running = false
+        model.pauseEgressMonitoring(true)
         generation += 1
         observer.stop()
         cancelTimers()
@@ -184,9 +203,12 @@ public final class MonitorController {
         let previous = activeSettings
         activeSettings = settings
         model.settings = settings
+        model.egressSettingsDidChange()
+        model.pauseEgressMonitoring(false)
         // 保存设置说明已唤醒；下面统一重建定时器。
         if sleeping {
             sleeping = false
+            model.pauseEgressMonitoring(false)
             cancelSleepFallback()
         }
         generation += 1
@@ -219,6 +241,18 @@ public final class MonitorController {
     private func startTimers() {
         localTimer = timer(every: model.settings.effectiveLocalCheckInterval, kind: .local)
         lightTimer = timer(every: model.settings.effectiveLightProbeInterval, kind: .light)
+        egressTimer = Task { [weak self, clock] in
+            while !Task.isCancelled {
+                // 30 秒仅检查本地到期状态；不会每次发网络请求。
+                do { try await clock.sleep(30) } catch { break }
+                guard !Task.isCancelled, let self, self.running, !self.sleeping else { break }
+                await self.model.maintainEgressHistory()
+                guard !Task.isCancelled, self.running, !self.sleeping else { break }
+                if !self.grace.isInGracePeriod(at: clock.now()) {
+                    self.model.checkEgressIP(automatic: true)
+                }
+            }
+        }
     }
 
     private func timer(every interval: TimeInterval, kind: CheckKind) -> Task<Void, Never> {
@@ -232,6 +266,8 @@ public final class MonitorController {
     }
 
     private func cancelTimers() {
+        egressTimer?.cancel()
+        egressTimer = nil
         localTimer?.cancel()
         lightTimer?.cancel()
         localTimer = nil
@@ -242,6 +278,7 @@ public final class MonitorController {
         guard running else { return }
         if event.reason == .sleep {
             sleeping = true
+            model.pauseEgressMonitoring(true)
             generation += 1
             activeTask?.cancel()
             queuedCheck = nil
@@ -257,6 +294,7 @@ public final class MonitorController {
 
         if sleeping {
             sleeping = false
+            model.pauseEgressMonitoring(false)
             cancelSleepFallback()
             startTimers()
         }
@@ -265,6 +303,7 @@ public final class MonitorController {
         queuedCheck = nil
         model.checkProgress = nil
         progressRunToken = nil
+        model.cancelEgressIP()
         _ = grace.noteChange(event.reason, at: clock.now())
         model.graceEndsAt = grace.graceEndsAt
         // 立即采集一轮切换中状态；宽限结束后重新采集并补轻测。
@@ -276,6 +315,7 @@ public final class MonitorController {
     private func resumeFromSleep() {
         guard running, sleeping else { return }
         sleeping = false
+        model.pauseEgressMonitoring(false)
         cancelSleepFallback()
         startTimers()
         restoreGraceIfNeeded()
@@ -313,6 +353,7 @@ public final class MonitorController {
             guard !Task.isCancelled, let self, self.running, !self.sleeping,
                   self.generation == version else { return }
             self.model.graceEndsAt = nil
+            self.model.checkEgressIP(automatic: true)
             self.tracker.reset()
             self.generation += 1
             self.activeTask?.cancel()

@@ -4,7 +4,7 @@ import TunCanaryRuntime
 import TunCanaryUI
 
 enum RuntimeSuites {
-    static var all: [TestSuite] { [suite, RuntimeReviewFixTests.suite, RuntimeDiagnosisTests.suite] }
+    static var all: [TestSuite] { [suite, RuntimeReviewFixTests.suite, RuntimeDiagnosisTests.suite, RuntimeEgressTests.suite] }
 
     private static var suite: TestSuite {
         TestSuite("Runtime.MonitorController", [

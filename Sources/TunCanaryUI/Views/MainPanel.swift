@@ -11,10 +11,10 @@ struct MainPanel: View {
             HeaderView(header: model.header, progress: model.checkProgress)
                 .padding(.horizontal, PopoverMetrics.padding)
                 .padding(.top, 14)
-                .padding(.bottom, 10)
+                .padding(.bottom, 8)
             ActionBar(model: model)
                 .padding(.horizontal, PopoverMetrics.padding)
-                .padding(.bottom, 12)
+                .padding(.bottom, 10)
             Divider()
             BoundedScroll(maxHeight: maxScrollHeight) {
                 VStack(alignment: .leading, spacing: PopoverMetrics.sectionSpacing) {
@@ -72,9 +72,16 @@ struct HeaderView: View {
         HStack(alignment: .top, spacing: 12) {
             SeverityBadge(severity: header.severity, size: 34)
             VStack(alignment: .leading, spacing: 3) {
-                Text(header.statusText)
-                    .font(.system(size: 19, weight: .semibold))
-                    .foregroundColor(header.tone.textColor)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(header.statusText)
+                        .font(.system(size: 19, weight: .semibold))
+                        .foregroundColor(header.tone.textColor)
+                    Spacer(minLength: 4)
+                    Label(header.checkedText, systemImage: "clock")
+                        .font(.system(size: 10.5))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
                 Text(header.reason)
                     .font(.system(size: 12.5))
                     .foregroundColor(.primary)
@@ -92,19 +99,11 @@ struct HeaderView: View {
                         .foregroundColor(.secondary)
                         .padding(.top, 1)
                 }
-                HStack(spacing: 4) {
-                    Image(systemName: "clock")
-                        .font(.system(size: 9.5))
-                    Text(header.checkedText)
-                    if let progress {
-                        Text("·")
-                        Text(PopoverFormatter.progressText(progress))
-                            .foregroundColor(Color(nsColor: StatusPalette.accent))
-                    }
+                if let progress {
+                    Text(PopoverFormatter.progressText(progress))
+                        .font(.system(size: 11))
+                        .foregroundColor(Color(nsColor: StatusPalette.accent))
                 }
-                .font(.system(size: 11))
-                .foregroundColor(.secondary)
-                .padding(.top, 1)
             }
             Spacer(minLength: 0)
         }
@@ -123,6 +122,7 @@ struct ActionBar: View {
                     model.recheck()
                 } label: {
                     Label(PopoverFormatter.recheckTitle(model.checkProgress), systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PillButtonStyle(prominent: true))
                 .disabled(!model.canRecheck)
@@ -131,16 +131,18 @@ struct ActionBar: View {
                 Button {
                     model.copyDiagnostics()
                 } label: {
-                    if model.copiedItem == .diagnostics {
-                        Label("已复制", systemImage: "checkmark")
-                    } else {
-                        Label("复制诊断", systemImage: "doc.on.doc")
+                    Group {
+                        if model.copiedItem == .diagnostics {
+                            Label("已复制", systemImage: "checkmark")
+                        } else {
+                            Label("复制诊断", systemImage: "doc.on.doc")
+                        }
                     }
+                    .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PillButtonStyle())
                 .accessibilityLabel(Text("复制脱敏诊断摘要"))
                 .help("复制不含 VPN 站点 URL、私有 IP 和主目录路径的诊断摘要")
-                Spacer(minLength: 0)
             }
             if let progress = model.checkProgress {
                 ThinProgressBar(fraction: progress.fraction)

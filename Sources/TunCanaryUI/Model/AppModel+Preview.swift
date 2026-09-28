@@ -111,6 +111,15 @@ extension AppModel {
                                                                   vpnState: local.vpnState)
             if scenario == .proxyTakeover { model.expandedCards = [.primaryDNS] }
         }
+        for offset in [-300.0, 0.0] {
+            for result in model.egressResults {
+                let country = result.location.map { String($0.prefix(2)) }
+                let geo = result.ip.flatMap { ip in country.map { EgressGeo(ip: ip, countryCode: $0, checkedAt: result.checkedAt) } }
+                let observation = EgressIPResult(target: result.target, checkedAt: result.checkedAt.addingTimeInterval(offset),
+                                                ip: result.ip, ipVersion: result.ipVersion, location: result.location, failure: result.failure)
+                _ = model.egressState.record(EgressObservation(result: observation, geo: geo), settings: settings.egressMonitoring)
+            }
+        }
         return model
     }
 }
@@ -136,9 +145,10 @@ enum PreviewData {
                            location: "US", failure: nil),
             EgressIPResult(target: .taobao, checkedAt: at, ip: "198.51.100.8", ipVersion: .ipv4,
                            location: "CN · 浙江 杭州", failure: nil),
-            EgressIPResult(target: egressTargets[4], checkedAt: at, ip: "198.51.100.37", ipVersion: .ipv4,
+            EgressIPResult(target: .bytedance, checkedAt: at, ip: "198.51.100.37", ipVersion: .ipv4,
                            location: "SG", failure: nil),
-            EgressIPResult(target: egressTargets[5], checkedAt: at, ip: nil, ipVersion: nil,
+            EgressIPResult(target: egressTargets[5], checkedAt: at, ip: "198.51.100.38", ipVersion: .ipv4, location: "SG", failure: nil),
+            EgressIPResult(target: egressTargets[6], checkedAt: at, ip: nil, ipVersion: nil,
                            location: nil, failure: .httpStatus(404)),
         ]
     }

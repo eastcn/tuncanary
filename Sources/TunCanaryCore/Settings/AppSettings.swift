@@ -141,6 +141,7 @@ public struct AppSettings: Sendable, Equatable, Codable {
     public var checkPages: [CheckPage]
     /// “检测出口”访问的目标，默认只有 Cloudflare；可加入最多 `EgressIPTarget.maxCustom` 个自定义域名。
     public var egressTargets: [EgressIPTarget]
+    public var egressMonitoring: EgressMonitoringSettings
     /// 通知开关，默认开启。
     public var notificationsEnabled: Bool
     /// 本机检查与后台站点轻测周期（秒）。
@@ -161,6 +162,7 @@ public struct AppSettings: Sendable, Equatable, Codable {
         canaryHost: String = PulseConstants.canaryHost,
         checkPages: [CheckPage] = [],
         egressTargets: [EgressIPTarget] = AppSettings.defaultEgressTargets,
+        egressMonitoring: EgressMonitoringSettings = EgressMonitoringSettings(),
         notificationsEnabled: Bool = true,
         localCheckInterval: TimeInterval = AppSettings.defaultLocalCheckInterval,
         lightProbeInterval: TimeInterval = AppSettings.defaultLightProbeInterval,
@@ -180,6 +182,7 @@ public struct AppSettings: Sendable, Equatable, Codable {
         self.canaryHost = canaryHost
         self.checkPages = checkPages
         self.egressTargets = egressTargets
+        self.egressMonitoring = egressMonitoring
         self.notificationsEnabled = notificationsEnabled
         self.localCheckInterval = localCheckInterval
         self.lightProbeInterval = lightProbeInterval
@@ -193,7 +196,7 @@ public struct AppSettings: Sendable, Equatable, Codable {
 
     private enum CodingKeys: String, CodingKey {
         case intranetURL, disconnectedDNSRule, expectedDNS, connectedDNSRule, residualDNSWarning
-        case proxyClient, manualProxy, canaryHost, checkPages, egressTargets
+        case proxyClient, manualProxy, canaryHost, checkPages, egressTargets, egressMonitoring
         case notificationsEnabled, localCheckInterval, lightProbeInterval, sites, tailnetTarget
         case proxyDiagnosticsEnabled
     }
@@ -212,6 +215,7 @@ public struct AppSettings: Sendable, Equatable, Codable {
         canaryHost = try values.decodeIfPresent(String.self, forKey: .canaryHost) ?? PulseConstants.canaryHost
         checkPages = try values.decodeIfPresent([CheckPage].self, forKey: .checkPages) ?? []
         egressTargets = try values.decodeIfPresent([EgressIPTarget].self, forKey: .egressTargets) ?? Self.defaultEgressTargets
+        egressMonitoring = (try? values.decodeIfPresent(EgressMonitoringSettings.self, forKey: .egressMonitoring)) ?? EgressMonitoringSettings()
         notificationsEnabled = try values.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? true
         localCheckInterval = try values.decodeIfPresent(TimeInterval.self, forKey: .localCheckInterval)
             ?? Self.defaultLocalCheckInterval
@@ -223,13 +227,13 @@ public struct AppSettings: Sendable, Equatable, Codable {
     }
 
     /// 实际检测的出口目标：内置项按固定顺序在前（没有时回落到默认值），
-    /// 自定义项按用户顺序在后，按域名去重，最多 `EgressIPTarget.maxCustom` 个。
+    /// 自定义项按用户顺序在后，按域名或端点去重，最多 `EgressIPTarget.maxCustom` 个。
     /// 与内置项同域名的自定义项（例如 chatgpt.com）视为打开该内置项。
     public var effectiveEgressTargets: [EgressIPTarget] {
         let normalized = egressTargets.map { $0.matchingBuiltIn ?? $0 }
         let builtIns = EgressIPTarget.builtIns.filter(normalized.contains)
         var seen = Set<String>()
-        let custom = normalized.filter { !$0.isBuiltIn && seen.insert($0.host).inserted }
+        let custom = normalized.filter { !$0.isBuiltIn && seen.insert($0.endpoint == nil ? $0.host : $0.rawValue).inserted }
         return (builtIns.isEmpty ? Self.defaultEgressTargets : builtIns) + custom.prefix(EgressIPTarget.maxCustom)
     }
 
@@ -271,6 +275,7 @@ public enum SettingsValidationError: Error, Equatable, Sendable {
     case expectedDNSInvalid(String)
     case localCheckIntervalInvalid
     case lightProbeIntervalInvalid
+    case egressMonitoringInvalid
     case tooManySites
     case siteIDInvalid
     case siteIDDuplicate(String)
@@ -302,6 +307,7 @@ public enum SettingsValidationError: Error, Equatable, Sendable {
             return "“\(value)”不是有效的 IPv4 地址"
         case .localCheckIntervalInvalid:
             return "本机检查间隔须为 5 至 3600 的整数秒"
+        case .egressMonitoringInvalid: return "出口检测间隔须为 5–1440 分钟，地域须为有效的国家和地区"
         case .lightProbeIntervalInvalid:
             return "后台轻测间隔须为 15 至 86400 的整数秒"
         case .tooManySites:
@@ -448,6 +454,7 @@ public enum SettingsValidator {
            case .failure(let error) = validateExpectedDNS(settings.expectedDNS) {
             errors.append(error)
         }
+        if !settings.egressMonitoring.isValid { errors.append(.egressMonitoringInvalid) }
         if !validInterval(settings.localCheckInterval, range: 5...3600) {
             errors.append(.localCheckIntervalInvalid)
         }

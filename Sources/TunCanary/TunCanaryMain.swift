@@ -94,7 +94,8 @@ private final class PulseAppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         EditMenu.install()
         let store = SettingsStore()
-        let model = AppModel(settings: store.load(), egressChecker: EgressIPChecker())
+        let model = AppModel(settings: store.load(), egressChecker: EgressIPChecker(),
+                             egressGeoClient: EgressGeoClient(), egressHistoryStore: EgressHistoryStore())
         let notifier = UserNotificationCenterNotifier()
         let loginItem = MainAppLoginItemController()
         let paths = KnownPaths.currentUser()

@@ -14,8 +14,8 @@ import os
 /// - 点击切换 NSPopover（`.transient`），弹窗内容为 NSHostingController 承载的 `PopoverRootView`。
 /// - `.transient` 只在应用处于激活状态时可靠：应用失去激活后，点击其他应用不一定能收起弹窗。
 ///   所以弹窗打开期间另外监听其他应用中的鼠标按下和应用失去激活，两者都收起弹窗。
-/// - 弹窗显示后关闭尺寸动画：检查结果更新时内容高度会变，带动画调整尺寸后光标区域可能没有刷新，
-///   指针会一直不可见，直到点击或移出弹窗。尺寸变化后也主动刷新一次光标区域。
+/// - 弹窗直接显示，不播放打开、关闭或尺寸动画。检查结果更新时内容高度会变，动画会延迟交互，
+///   还可能使指针不可见，直到点击或移出弹窗。尺寸变化后也主动刷新一次光标区域。
 ///
 /// 创建即在菜单栏显示图标；只应在应用模式下创建（命令行与测试中不要创建）。
 @MainActor
@@ -30,6 +30,7 @@ public final class StatusItemController: NSObject, NSPopoverDelegate {
     public var indicatorMinimumVisible: TimeInterval = 1.0
 
     private let hostingController: NSHostingController<PopoverRootView>
+    private var configuredScrollHeight = PopoverMetrics.defaultMaxScrollHeight
     private let badgeView = StatusBadgeView()
     private let idleImage = LogoRenderer.menuBarTemplateImage(isChecking: false)
     private let checkingImage = LogoRenderer.menuBarTemplateImage(isChecking: true)
@@ -54,7 +55,7 @@ public final class StatusItemController: NSObject, NSPopoverDelegate {
         super.init()
 
         popover.behavior = .transient
-        popover.animates = true
+        popover.animates = false
         popover.contentViewController = hostingController
         popover.delegate = self
 
@@ -89,16 +90,19 @@ public final class StatusItemController: NSObject, NSPopoverDelegate {
         Logger(subsystem: AppIdentity.bundleID, category: "interface").debug("popover.show")
         guard let button = statusItem.button else { return }
         let visibleHeight = (button.window?.screen ?? NSScreen.main)?.visibleFrame.height ?? 800
-        hostingController.rootView = PopoverRootView(
-            model: model, maxScrollHeight: Self.maxScrollHeight(forVisibleHeight: visibleHeight))
+        let scrollHeight = Self.maxScrollHeight(forVisibleHeight: visibleHeight)
+        // 同一屏幕重复打开复用视图，只在可用高度改变时重新配置布局。
+        if scrollHeight != configuredScrollHeight {
+            configuredScrollHeight = scrollHeight
+            hostingController.rootView = PopoverRootView(model: model, maxScrollHeight: scrollHeight)
+        }
         NSApp.activate(ignoringOtherApps: true)
-        popover.animates = true
+        popover.animates = false
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         startDismissMonitors()
         let window = popover.contentViewController?.view.window
         window?.makeKey()
         clearInitialFocus(in: window)
-        Task { await model.refreshSystemStatus() }
     }
 
     /// 弹窗成为主窗口后，AppKit 会把焦点交给第一个可聚焦的控件（“立即复测”），
@@ -115,12 +119,12 @@ public final class StatusItemController: NSObject, NSPopoverDelegate {
 
     public func closePopover() {
         guard popover.isShown else { return }
-        popover.animates = true
+        popover.animates = false
         popover.performClose(nil)
     }
 
     public func popoverDidShow(_ notification: Notification) {
-        // 打开动画结束后，内容尺寸变化直接生效，不再动画。
+        // 内容尺寸变化直接生效。
         popover.animates = false
     }
 

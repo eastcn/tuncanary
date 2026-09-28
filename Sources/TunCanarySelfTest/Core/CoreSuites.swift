@@ -5,6 +5,7 @@ enum CoreSuites {
     static var all: [TestSuite] {
         [
             BasicsTests.suite,
+            EgressMonitoringTests.suite,
             IPv4Tests.suite,
             ClashConfigParserTests.suite,
             VPNStatusFileParserTests.suite,

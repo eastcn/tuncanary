@@ -33,12 +33,22 @@ public final class AppModel: ObservableObject {
     /// 内存中保留、诊断摘要附带的最近事件条数。
     public static let recentEventLimit = 20
 
-    /// 按需出口检测，仅存内存，不参与总体健康判断或诊断导出。
+    /// 出口监测独立于总体健康判断和脱敏诊断导出。
     @Published public internal(set) var egressResults: [EgressIPResult] = []
     @Published public internal(set) var isCheckingEgress = false
+    /// 各目标详情默认收起；关闭弹窗后重置，后台采样不受影响。
+    @Published public var expandedEgressTargets: Set<EgressIPTarget> = []
     public var egressChecker: (any EgressIPChecking)?
     var egressTask: Task<Void, Never>?
     var egressGeneration = 0
+    @Published public internal(set) var egressState = EgressMonitorState()
+    @Published public internal(set) var egressPersistenceError: String?
+    public var egressGeoClient: (any EgressGeoLookingUp)?
+    public var deliverEgressAlert: @MainActor (EgressAlert) async -> Void = { _ in }
+    let egressHistoryStore: EgressHistoryStore?
+    var egressPaused = false
+    var egressPersistenceRevision = 0
+    var egressLastPrunedAt: Date?
 
     // MARK: 设置与系统状态
 
@@ -105,9 +115,14 @@ public final class AppModel: ObservableObject {
         loginItemStatus: LoginItemStatus = .unavailable,
         now: @escaping () -> Date = Date.init,
         timeZone: TimeZone = .current,
-        egressChecker: (any EgressIPChecking)? = nil
+        egressChecker: (any EgressIPChecking)? = nil,
+        egressGeoClient: (any EgressGeoLookingUp)? = nil,
+        egressHistoryStore: EgressHistoryStore? = nil
     ) {
         self.egressChecker = egressChecker
+        self.egressGeoClient = egressGeoClient
+        self.egressHistoryStore = egressHistoryStore
+        self.egressState = egressHistoryStore?.load(at: now()) ?? EgressMonitorState()
         self.settings = settings
         self.actions = actions
         self.overall = overall
@@ -262,9 +277,18 @@ public final class AppModel: ObservableObject {
         Task { await refreshSystemStatus() }
     }
 
-    /// 弹窗关闭后回到主页。
+    /// 各出口目标独立展开。
+    public func toggleEgressDetails(_ target: EgressIPTarget) {
+        if expandedEgressTargets.contains(target) {
+            expandedEgressTargets.remove(target)
+        } else {
+            expandedEgressTargets.insert(target)
+        }
+    }
+
     public func popoverDidClose() {
-        route = .main
+        if !expandedEgressTargets.isEmpty { expandedEgressTargets.removeAll() }
+        if route != .main { route = .main }
     }
 
     /// 草稿的校验结果。

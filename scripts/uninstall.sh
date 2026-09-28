@@ -7,7 +7,7 @@ usage() {
 用法：scripts/uninstall.sh [--clear-settings] [--skip-login-item] [--help]
 
 默认保留 TunCanary 设置。传入 --clear-settings 时，一并删除
-io.github.eastcn.tuncanary 的 UserDefaults 设置和本机的故障事件日志。
+io.github.eastcn.tuncanary 的 UserDefaults 设置、本机故障事件日志和出口历史。
 传入 --skip-login-item 时跳过登录项注销（例如系统无法查询登录项时）。
 登录项未注册或系统找不到时，默认流程也会视为无需注销并继续。
 EOF
@@ -32,6 +32,7 @@ wrapper="$bin_dir/tuncanary"
 bundle_id="io.github.eastcn.tuncanary"
 marker="# TunCanary installer wrapper"
 event_log="$HOME/Library/Application Support/TunCanary/events.jsonl"
+egress_log="$HOME/Library/Application Support/TunCanary/egress-history.json"
 
 running_pids() {
     local executable="$1" pattern='^' char index result status
@@ -89,6 +90,7 @@ if (( clear_settings == 1 )); then
         defaults delete "$bundle_id" >/dev/null
     fi
     if [[ -f "$event_log" && ! -L "$event_log" ]]; then rm -f -- "$event_log"; fi
+    if [[ -f "$egress_log" && ! -L "$egress_log" ]]; then rm -f -- "$egress_log"; fi
 fi
 
 if [[ -e "$app" ]]; then rm -rf -- "$app"; fi

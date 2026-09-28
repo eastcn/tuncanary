@@ -28,6 +28,20 @@ enum UIRenderPreviewTests {
                     }
                 }
             },
+            TestCase("出口详情：各目标默认收起与单目标展开（浅色与深色）", timeout: 60) { t in
+                try prepare(directory)
+                for expanded in [false, true] {
+                    for dark in [false, true] {
+                        let model = await MainActor.run { () -> AppModel in
+                            let model = AppModel.preview(.googleWarning)
+                            model.expandedEgressTargets = expanded ? [.cloudflare] : []
+                            return model
+                        }
+                        let data = await renderEgress(model, dark: dark)
+                        write(data, to: directory, name: "egress-\(expanded ? "expanded" : "collapsed")-\(suffix(dark)).png", t)
+                    }
+                }
+            },
             TestCase("弹窗全展开：站点行下的代理诊断", timeout: 60) { t in
                 try prepare(directory)
                 for dark in [false, true] {
@@ -136,6 +150,12 @@ enum UIRenderPreviewTests {
         await PreviewSnapshotRenderer.pngData(
             of: PopoverRootView(model: AppModel.preview(scenario), maxScrollHeight: nil),
             width: PopoverMetrics.width, dark: dark)
+    }
+
+    @MainActor
+    static func renderEgress(_ model: AppModel, dark: Bool) async -> Data? {
+        await PreviewSnapshotRenderer.pngData(of: PopoverRootView(model: model, maxScrollHeight: nil),
+                                              width: PopoverMetrics.width, dark: dark)
     }
 
     /// 设置页“站点”栏全展开（含自定义出口目标）。

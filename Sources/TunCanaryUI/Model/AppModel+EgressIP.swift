@@ -2,18 +2,67 @@ import Foundation
 import TunCanaryCore
 
 extension AppModel {
-    public func checkEgressIP() {
-        guard !isCheckingEgress, let checker = egressChecker else { return }
+    /// 手动和后台共用冷却时间；重试按钮不能绕过限流或最小间隔。
+    public func checkEgressIP(automatic: Bool = false) {
+        guard !isCheckingEgress, !egressPaused, let checker = egressChecker,
+              !automatic || settings.egressMonitoring.automatic else { return }
+        let date = now()
+        let interval = settings.egressMonitoring.effectiveInterval
+        let eligible = settings.effectiveEgressTargets.filter {
+            // 旧淘宝非公开接口保留手动能力，自动检测使用字节目标。
+            (!automatic || $0 != .taobao) && egressState.isEligible($0, at: date, interval: interval)
+        }
+        // 后台每次调度只取一个目标，错开请求；手动仍可检测全部到期目标。
+        let targets = automatic ? Array(eligible.prefix(1)) : eligible
+        guard !targets.isEmpty else { return }
         egressGeneration += 1
         let generation = egressGeneration
+        let configuration = settings.egressMonitoring
         isCheckingEgress = true
-        egressResults = []
+        egressResults.removeAll { targets.contains($0.target) }
+        for target in targets { egressState.begin(target, at: date) }
         egressTask = Task { [weak self] in
-            let results = await checker.check(targets: settings.effectiveEgressTargets)
-            guard !Task.isCancelled, let self, self.egressGeneration == generation else { return }
-            self.egressResults = results
+            guard let self else { return }
+            await self.persistEgressState()
+            guard !Task.isCancelled, self.egressGeneration == generation else { return }
+            let results = await checker.check(targets: targets)
+            guard !Task.isCancelled, self.egressGeneration == generation else { return }
+            var alerts: [EgressAlert] = []
+            // 同轮相同 IP 只查询一次，查询服务失败按 IP 冷却，429 对整个服务冷却。
+            for result in results where targets.contains(result.target) {
+                var geo: EgressGeo?
+                if result.isSuccess, let ip = result.ip {
+                    geo = self.egressState.geoCache[ip]
+                    if geo?.isFresh(at: result.checkedAt) != true,
+                       (self.egressState.geoNextAttempt[ip] ?? .distantPast) <= self.now(),
+                       (self.egressState.geoServiceNextAttempt ?? .distantPast) <= self.now(),
+                       let client = self.egressGeoClient {
+                        let lookup = await client.lookup(ip: ip)
+                        guard !Task.isCancelled, self.egressGeneration == generation else { return }
+                        if let found = lookup.geo, found.ip == ip {
+                            geo = found
+                            self.egressState.geoCache[ip] = found
+                            self.egressState.geoNextAttempt[ip] = nil
+                        } else {
+                            self.egressState.geoNextAttempt[ip] = self.now().addingTimeInterval(3600)
+                        }
+                        if let retry = lookup.retryAfter { self.egressState.geoServiceNextAttempt = retry }
+                    }
+                }
+                alerts += self.egressState.record(EgressObservation(result: result, geo: geo), settings: configuration)
+                self.egressResults.removeAll { $0.target == result.target }
+                self.egressResults.append(result)
+            }
+            await self.persistEgressState()
+            guard !Task.isCancelled, self.egressGeneration == generation else { return }
             self.isCheckingEgress = false
             self.egressTask = nil
+            if self.settings.notificationsEnabled {
+                for alert in alerts {
+                    guard !Task.isCancelled, self.egressGeneration == generation else { return }
+                    await self.deliverEgressAlert(alert)
+                }
+            }
         }
     }
 
@@ -23,5 +72,57 @@ extension AppModel {
         egressTask = nil
         isCheckingEgress = false
         egressResults = []
+    }
+
+    public func pauseEgressMonitoring(_ paused: Bool) {
+        egressPaused = paused
+        if paused { cancelEgressIP() }
+    }
+
+    public func egressSettingsDidChange() {
+        cancelEgressIP()
+        // 正常目标立即使用新间隔；失败退避和服务端冷却保留。
+        for (key, var control) in egressState.controls where control.failures == 0 {
+            if let latest = egressState.history.last(where: { $0.result.target.rawValue == key && $0.result.isSuccess }) {
+                control.nextAttempt = latest.result.checkedAt.addingTimeInterval(settings.egressMonitoring.effectiveInterval)
+                egressState.controls[key] = control
+            }
+        }
+        Task { [weak self] in await self?.persistEgressState() }
+        // 不保留旧规则的连续次数；用户调整地域不是一次网络恢复。
+        for (key, var state) in egressState.regionAlerts {
+            let rule = settings.egressMonitoring.allowedRegions[key] ?? []
+            if rule != state.rule {
+                state = EgressRegionAlertState(); state.rule = rule
+                egressState.regionAlerts[key] = state
+            }
+        }
+    }
+
+    public func resumeEgressTarget(_ target: EgressIPTarget) {
+        egressState.resume(target)
+        checkEgressIP()
+    }
+
+    public func egressSummary(_ target: EgressIPTarget) -> EgressStabilitySummary {
+        egressState.summary(for: target, at: now(), interval: settings.egressMonitoring.effectiveInterval)
+    }
+
+    public func maintainEgressHistory() async {
+        let date = now()
+        guard date.timeIntervalSince(egressLastPrunedAt ?? .distantPast) >= 3600 else { return }
+        egressLastPrunedAt = date
+        egressState.prune(at: date)
+        await persistEgressState()
+    }
+
+    private func persistEgressState() async {
+        guard let store = egressHistoryStore else { return }
+        let state = egressState
+        egressPersistenceRevision += 1
+        let revision = egressPersistenceRevision
+        let success = await Task.detached(priority: .utility) { store.save(state, revision: revision) }.value
+        guard revision == egressPersistenceRevision else { return }
+        egressPersistenceError = success ? nil : "出口历史写入失败，本轮仅保存在内存"
     }
 }

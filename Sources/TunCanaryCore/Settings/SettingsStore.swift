@@ -21,6 +21,7 @@ public final class SettingsStore: @unchecked Sendable {
         public static let canaryHost = "probe.canaryHost"
         /// 外部检测页（JSON）。
         public static let checkPages = "checkPages"
+        public static let egressMonitoring = "egress.monitoring"
         public static let egressTargets = "egress.targets"
         public static let notificationsEnabled = "notificationsEnabled"
         public static let localCheckInterval = "localCheckInterval"
@@ -30,7 +31,7 @@ public final class SettingsStore: @unchecked Sendable {
         public static let sitesInvalidBackup = "sites.invalidBackup"
         public static let all = [intranetURL, tailnetTarget, proxyDiagnostics, expectedDNS, disconnectedDNSRule, connectedDNSRule,
                                  residualDNSWarning, proxyClient, manualProxy, canaryHost, checkPages,
-                                 egressTargets, notificationsEnabled,
+                                 egressTargets, egressMonitoring, notificationsEnabled,
                                  localCheckInterval, lightProbeInterval, sites, sitesInvalidBackup]
     }
 
@@ -93,6 +94,10 @@ public final class SettingsStore: @unchecked Sendable {
         if let data = defaults.data(forKey: Key.checkPages),
            let pages = try? JSONDecoder().decode([CheckPage].self, from: data) {
             settings.checkPages = Array(pages.filter(SettingsValidator.isValidCheckPage).prefix(AppSettings.maxCheckPages))
+        }
+        if let data = defaults.data(forKey: Key.egressMonitoring),
+           let config = try? JSONDecoder().decode(EgressMonitoringSettings.self, from: data), config.isValid {
+            settings.egressMonitoring = config
         }
         if let list = defaults.stringArray(forKey: Key.egressTargets) {
             let targets = list.compactMap(EgressIPTarget.init(rawValue:))
@@ -160,6 +165,7 @@ public final class SettingsStore: @unchecked Sendable {
         if let data = try? JSONEncoder().encode(settings.checkPages) {
             defaults.set(data, forKey: Key.checkPages)
         }
+        if let data = try? JSONEncoder().encode(settings.egressMonitoring) { defaults.set(data, forKey: Key.egressMonitoring) }
         defaults.set(settings.effectiveEgressTargets.map(\.rawValue), forKey: Key.egressTargets)
         if let data = try? JSONEncoder().encode(settings.manualProxy) {
             defaults.set(data, forKey: Key.manualProxy)

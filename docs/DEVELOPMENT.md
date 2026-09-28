@@ -6,7 +6,7 @@ SwiftPM 工程，`swift-tools-version:5.10`，平台 macOS 13，没有第三方�
 
 | 模块 | 内容 |
 | --- | --- |
-| `TunCanaryCore` | 纯逻辑：数据模型、解析器、判定引擎、VPN 适配器、连通性规则、通知去重、`--check` 判定、设置、脱敏和诊断摘要。除 `SettingsStore`、`VPNAdapterStore`、`VPNAdapterRegistry`、`FaultEventStore` 和 `DNSGuardStateStore` 外不做 I/O。守护进程的文件格式也在这里（`Guard/`），应用和守护进程共用 |
+| `TunCanaryCore` | 纯逻辑：数据模型、解析器、判定引擎、VPN 适配器、连通性规则、通知去重、`--check` 判定、设置、脱敏和诊断摘要。除 `SettingsStore`、`VPNAdapterStore`、`VPNAdapterRegistry`、`FaultEventStore`、`EgressHistoryStore` 和 `DNSGuardStateStore` 外不做 I/O。守护进程的文件格式也在这里（`Guard/`），应用和守护进程共用 |
 | `TunCanarySystem` | 系统采集：进程、网络接口、路由、SCDynamicStore、代理配置、VPN 状态文件、代理 DNS 查询、系统解析探针，以及网络变化与睡眠唤醒的监听 |
 | `TunCanaryProbe` | 站点探测、完整检测的并发控制、`--check` 流程编排和出口检测 |
 | `TunCanaryUI` | 菜单栏图标、弹窗、设置、通知和登录项 |
@@ -16,6 +16,10 @@ SwiftPM 工程，`swift-tools-version:5.10`，平台 macOS 13，没有第三方�
 | `TunCanarySelfTest` | 自带的测试运行器 |
 
 一轮检查的数据流：`SystemSnapshotProvider` 采集 `LocalSnapshot`，`LocalEvaluator` 得出 `LocalAssessment`（四张状态卡，有 Tailscale 时加一张 Tailnet 卡，以及故障列表），站点探测结果进入 `ConnectivityTracker`，两者合并为 `OverallAssessment`，再由 `NotificationDeduper` 决定是否通知，由 `FaultEventRecorder` 生成故障事件并经 `FaultEventStore` 写入本机日志（宽限期内两者都不调用）。
+
+出口监测使用独立数据流：`EgressIPChecker` 读取目标回显的 IP，`EgressGeoClient` 查询该 IP 的地域，`EgressMonitorState` 管理采样、缓存、冷却、变化比较和地域通知状态，`EgressHistoryStore` 原子写入本机历史。`AppModel` 防止取消后的迟到结果写回；保存使用递增版本，避免旧任务覆盖新状态。`MonitorController` 每 30 秒检查到期状态，每次最多自动采样一个目标，睡眠和网络切换宽限期内暂停。实际网络请求仍遵守每目标至少 5 分钟的间隔。
+
+出口结果不参与 `OverallAssessment`、诊断摘要或命令行 JSON。测试通过注入 `URLProtocol`、地域服务、历史文件路径和虚拟时钟验证，不访问真实目标。
 
 ## 测试
 
@@ -65,3 +69,12 @@ TUNCANARY_GUARD_ROOT=/tmp/guard-root scripts/uninstall-dns-guard.sh
 - 守护进程的配置、适配器和可执行文件都在 `/Library/Application Support/TunCanary/`，归 root 所有。它不读取用户可写的设置和适配器，不按用户可写文件中的路径执行程序。代理配置目录由 root 配置指定，读取时只取 TUN 开关、DNS 端口和 fake-ip 网段。
 - 守护进程的写入和探测通过协议注入，测试用桩对象，不在测试里改系统 DNS。
 - 诊断摘要、命令行输出和通知正文都要经过 `Redactor`。
+
+菜单栏弹窗直接显示和关闭，不播放 `NSPopover` 动画。同一可用高度下重复打开复用 SwiftUI 根视图；通知和登录项状态在打开设置时刷新。出口模块始终显示目标行；各目标详情独立展开、默认收起，关闭弹窗时重置。历史摘要和倒计时视图仅在对应目标展开时创建。
+
+
+## 发布
+
+版本号只在 `AppIdentity.swift` 修改。为版本增加 `docs/releases/v<版本>.md`，提交后推送对应的 `v<版本>` 标签。
+
+`Release` 工作流会检查标签与应用版本一致，执行离线测试，构建并校验应用签名。工作流先创建草稿，上传带架构名称的 ZIP 与 `SHA256SUMS.txt`，再公开发布。失败时不会公开不完整的草稿；已有正式版本不会被重跑覆盖。

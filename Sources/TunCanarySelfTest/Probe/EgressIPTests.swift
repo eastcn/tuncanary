@@ -18,7 +18,7 @@ private final class TraceURLProtocol: URLProtocol, @unchecked Sendable {
 
     private static let lock = NSLock()
     private static var replies: [String: Reply] = [:]
-    private static var seen: [(url: String, cookie: String?)] = []
+    private static var seen: [(url: String, cookie: String?, method: String?)] = []
 
     static func reset(_ claude: Reply, _ cloudflare: Reply) {
         lock.lock()
@@ -34,7 +34,11 @@ private final class TraceURLProtocol: URLProtocol, @unchecked Sendable {
         lock.unlock()
     }
 
-    static var requests: [(url: String, cookie: String?)] {
+    static func addURL(_ url: String, _ reply: Reply) {
+        lock.lock(); replies[url] = reply; lock.unlock()
+    }
+
+    static var requests: [(url: String, cookie: String?, method: String?)] {
         lock.lock(); defer { lock.unlock() }
         return seen
     }
@@ -54,7 +58,7 @@ private final class TraceURLProtocol: URLProtocol, @unchecked Sendable {
             return
         }
         Self.lock.lock()
-        Self.seen.append((url.absoluteString, request.value(forHTTPHeaderField: "Cookie")))
+        Self.seen.append((url.absoluteString, request.value(forHTTPHeaderField: "Cookie"), request.httpMethod))
         let reply = Self.replies[url.absoluteString]
         Self.lock.unlock()
         guard let reply else {
@@ -89,6 +93,54 @@ enum EgressIPTests {
 
     static var suite: TestSuite {
         TestSuite("Probe.EgressIP", [
+            TestCase("字节及自定义响应头使用 HEAD；JSON 字段直接读取并校验 IP") { t in
+                TraceURLProtocol.reset(.text(""), .text(""))
+                TraceURLProtocol.add(.bytedance, .text("", headers: ["x-request-ip": "198.51.100.3", "Content-Length": "500000"]))
+                let header = try t.require(EgressIPTarget.endpoint(EgressEndpoint(name: "回显", url: URL(string: "https://echo.example.test/h")!, method: .header, selector: "client-ip")))
+                let json = try t.require(EgressIPTarget.endpoint(EgressEndpoint(name: "JSON", url: URL(string: "https://echo.example.test/j")!, method: .json, selector: "data.ip")))
+                TraceURLProtocol.add(header, .text("", headers: ["client-ip": "2001:DB8:0:0:0:0:0:1"]))
+                TraceURLProtocol.add(json, .text(#"{"data":{"ip":"198.51.100.4"}}"#))
+                let results = await checker().check(targets: [.bytedance, header, json])
+                t.expectEqual(results.map(\.ip), ["198.51.100.3", "2001:db8::1", "198.51.100.4"])
+                t.expectEqual(TraceURLProtocol.requests.first { $0.url == EgressIPTarget.bytedance.url.absoluteString }?.method, "HEAD")
+                t.expectEqual(TraceURLProtocol.requests.first { $0.url == json.url.absoluteString }?.method, "GET")
+                TraceURLProtocol.add(json, .text(#"{"data":{"ip":"198.51.100.4junk"}}"#))
+                let invalid = await checker().check(targets: [json])
+                t.expectEqual(invalid.first?.failure, .invalidIP)
+            },
+            TestCase("429 带冷却时间；挑战页明确暂停，重定向不跟随") { t in
+                TraceURLProtocol.reset(.text("", status: 429, headers: ["Retry-After": "1800"]),
+                                       .text("<html>Just a moment! challenge</html>"))
+                let before = Date()
+                let results = await checker().check(targets: pair)
+                t.expectEqual(results[0].failure, .httpStatus(429))
+                t.expect((results[0].retryAfter ?? .distantPast).timeIntervalSince(before) >= 1799)
+                t.expectEqual(results[1].failure, .challenge)
+                let custom = try t.require(EgressIPTarget.endpoint(EgressEndpoint(name: "自定义", url: URL(string: "https://echo.example.test/ip")!, method: .json, selector: "ip")))
+                TraceURLProtocol.add(custom, .text("<html>captcha challenge</html>"))
+                TraceURLProtocol.add(.bytedance, .text("", headers: ["cf-mitigated": "challenge"]))
+                let paused = await checker().check(targets: [custom, .bytedance])
+                t.expectEqual(paused.map(\.failure), [.challenge, .challenge])
+            },
+            TestCase("地域查询明确指定 IP，不接受服务回显的另一个 IP；429 不重试") { t in
+                TraceURLProtocol.reset(.text(""), .text(""))
+                let url = "https://ipwho.is/198.51.100.4?fields=ip,success,country_code,region,city,connection.isp"
+                TraceURLProtocol.addURL(url, .text(#"{"success":true,"ip":"198.51.100.4","country_code":"CN","region":"Zhejiang","city":"Hangzhou","connection":{"isp":"Test"}}"#))
+                let client = EgressGeoClient(configurationFactory: { TraceURLProtocol.configuration() })
+                let result = await client.lookup(ip: "198.51.100.4")
+                t.expectEqual(result.geo?.countryCode, "CN")
+                t.expectEqual(result.geo?.ip, "198.51.100.4")
+                t.expectEqual(result.geo?.isp, "Test")
+                TraceURLProtocol.addURL(url, .text(#"{"success":true,"ip":"198.51.100.99","country_code":"US"}"#))
+                let mismatched = await client.lookup(ip: "198.51.100.4")
+                t.expectNil(mismatched.geo)
+                TraceURLProtocol.addURL(url, .text("", status: 429, headers: ["Retry-After": "3600"]))
+                let rateLimited = await client.lookup(ip: "198.51.100.4")
+                t.expectNil(rateLimited.geo)
+                t.expect(rateLimited.retryAfter != nil)
+                t.expectEqual(TraceURLProtocol.requests.count, 3)
+                t.expect(TraceURLProtocol.requests.allSatisfy { $0.cookie == nil })
+            },
             TestCase("200 分别解析目标所见 IPv4 和 IPv6") { t in
                 TraceURLProtocol.reset(.text("ip=203.0.113.17\nloc=US\n"),
                                        .text("ip=2001:db8::17\nloc=JP\n"))
