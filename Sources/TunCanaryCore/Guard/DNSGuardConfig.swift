@@ -6,24 +6,40 @@ import Foundation
 public struct DNSGuardConfig: Sendable, Equatable, Codable {
     /// 连接期接管（阶段 B）。
     public struct ConnectedTakeover: Sendable, Equatable, Codable {
+        public enum ProbeMode: String, Sendable, Codable {
+            case proxyDNS
+            case systemSplitDNS
+        }
+
+        public var probeMode: ProbeMode
+        public var splitDNSRules: [DNSGuardSplitDNSRule]
+        public var publicProbeHost: String
         public var enabled: Bool
-        /// 通过代理 DNS 查询的 VPN 域名。查到真实地址，说明代理能解析 VPN 域名。
+        /// 接管前查询的 VPN 域名；按 probeMode 选择代理或系统分域解析。
         public var intranetProbeHost: String
         /// 10 分钟内最多写入几次。达到上限说明 VPN 客户端在反复改回自己的 DNS，停用接管直到 VPN 断开。
         public var maxWritesPerTenMinutes: Int
 
-        public init(enabled: Bool = false, intranetProbeHost: String = "", maxWritesPerTenMinutes: Int = 3) {
+        public init(enabled: Bool = false, intranetProbeHost: String = "", maxWritesPerTenMinutes: Int = 3,
+                    probeMode: ProbeMode = .proxyDNS,
+                    splitDNSRules: [DNSGuardSplitDNSRule] = [], publicProbeHost: String = PulseConstants.canaryHost) {
+            self.probeMode = probeMode
+            self.splitDNSRules = splitDNSRules
+            self.publicProbeHost = publicProbeHost
             self.enabled = enabled
             self.intranetProbeHost = intranetProbeHost
             self.maxWritesPerTenMinutes = maxWritesPerTenMinutes
         }
 
         private enum CodingKeys: String, CodingKey {
-            case enabled, intranetProbeHost, maxWritesPerTenMinutes
+            case enabled, intranetProbeHost, maxWritesPerTenMinutes, probeMode, splitDNSRules, publicProbeHost
         }
 
         public init(from decoder: Decoder) throws {
             let values = try decoder.container(keyedBy: CodingKeys.self)
+            probeMode = try values.decodeIfPresent(ProbeMode.self, forKey: .probeMode) ?? .proxyDNS
+            splitDNSRules = try values.decodeIfPresent([DNSGuardSplitDNSRule].self, forKey: .splitDNSRules) ?? []
+            publicProbeHost = try values.decodeIfPresent(String.self, forKey: .publicProbeHost) ?? PulseConstants.canaryHost
             enabled = try values.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
             intranetProbeHost = try values.decodeIfPresent(String.self, forKey: .intranetProbeHost) ?? ""
             maxWritesPerTenMinutes = try values.decodeIfPresent(Int.self, forKey: .maxWritesPerTenMinutes) ?? 3
@@ -95,6 +111,28 @@ public struct DNSGuardConfig: Sendable, Equatable, Codable {
         }
         if connectedTakeover.enabled && !SettingsValidator.isValidHostName(connectedTakeover.intranetProbeHost) {
             problems.append("启用连接期接管时，connectedTakeover.intranetProbeHost 须为有效域名")
+        }
+        if connectedTakeover.probeMode == .systemSplitDNS {
+            let rules = connectedTakeover.splitDNSRules
+            if rules.isEmpty { problems.append("系统分域 DNS 模式须配置 splitDNSRules") }
+            if Set(rules.map(\.domain)).count != rules.count { problems.append("分域 DNS 域名不能重复") }
+            if !rules.contains(where: { $0.matches(connectedTakeover.intranetProbeHost) }) {
+                problems.append("分域 DNS 规则须覆盖内网探针")
+            }
+            for rule in rules {
+                if rule.domain != DNSGuardSplitDNSRule.normalized(rule.domain)
+                    || !SettingsValidator.isValidHostName(rule.domain) {
+                    problems.append("分域 DNS 域名无效或未规范化")
+                }
+                if rule.servers.isEmpty || rule.servers.contains(where: { IPv4($0) == nil }) {
+                    problems.append("分域 DNS 服务器须为非空 IPv4 列表")
+                }
+            }
+            if connectedTakeover.publicProbeHost.utf8.count > 190
+                || !SettingsValidator.isValidHostName(connectedTakeover.publicProbeHost)
+                || rules.contains(where: { $0.matches(connectedTakeover.publicProbeHost) }) {
+                problems.append("公网探针须为分域 DNS 规则以外的有效域名")
+            }
         }
         return problems
     }

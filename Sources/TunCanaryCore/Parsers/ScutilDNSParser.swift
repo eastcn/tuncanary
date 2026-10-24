@@ -47,6 +47,8 @@ public enum ScutilDNSParser {
                 }
             } else if key == "flags" {
                 current?.flags = value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            } else if key == "port" {
+                current?.port = Int(value)
             } else if key == "order" {
                 current?.order = Int(value)
             }

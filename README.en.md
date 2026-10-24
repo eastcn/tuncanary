@@ -148,6 +148,22 @@ Uninstalling stops the guard and removes these files but does not revert DNS; ch
 
 Once installed, the primary DNS card shows whether the guard is installed and the result of its latest run and write. If the guard's target DNS differs from the expected DNS in settings, the card says so.
 
+### Existing macOS split DNS
+
+When VPN domains already use `/etc/resolver/`, opt in with
+`connectedTakeover.probeMode: "systemSplitDNS"`. The default remains `proxyDNS`.
+Set `splitDNSRules` to an array of `{ "domain": "vpn.example", "servers": ["192.0.2.53"] }`
+using your own installed rules, including any required public exceptions. These example values are fictional.
+The rules must cover `intranetProbeHost`; `publicProbeHost` (default `www.google.com`) must be outside them.
+
+This mode installs no service and changes neither resolver files nor proxy configuration. Before takeover,
+it verifies persistent root-owned rules, effective system resolvers, system lookup, and a fresh upstream answer.
+After takeover it rechecks VPN resolution and requires a fresh public system lookup to return proxy fake IPs.
+If verification fails, it restores the previous DNS only while the primary service and saved DNS still match
+its own write. Concurrent changes are preserved. Missing, conflicting, or stale rules fail closed.
+This supports applications using the macOS system resolver; it does not repair resolution inside explicit
+HTTP/SOCKS proxies. Installation and edits to root-owned guard configuration remain user actions.
+
 ## Privacy
 
 The menu bar app only reads state. It never changes DNS, TUN, proxy or VPN settings. Only the separately installed DNS guard changes the network service's saved DNS (see above). The app also reads the guard's config, state and events under `/Library/Application Support/TunCanary/` when they exist. When a Tailscale tunnel exists, it asks MagicDNS (`100.100.100.100`) for this Mac's name and resolves that name; when a tailnet subnet target is set, it opens TCP connections to it. Exit IP targets are contacted at the configured interval or on an eligible manual check. Location is queried from `ipwho.is/<measured IP>` and shared by exact IP for 7 days. This sends the measured exit IP to the location provider. MagicDNS names and the tailnet domain are never written to evidence or diagnostics. It uploads no local history or telemetry. Diagnostics, command-line output and notifications are redacted: private IP addresses keep only the first octet, and the VPN site URL and home directory are removed. A redacted log of when faults appeared, changed and cleared (at most 200 entries) is kept locally in `~/Library/Application Support/TunCanary/events.jsonl`; `scripts/uninstall.sh --clear-settings` removes it. Exit samples and location cache are kept separately in `~/Library/Application Support/TunCanary/egress-history.json`, readable and writable only by the current user. Samples expire after 30 days, with cleanup at startup and during operation. This history contains full exit IP addresses and is excluded from diagnostics, CLI JSON and fault-event exports. The same uninstall option deletes it.

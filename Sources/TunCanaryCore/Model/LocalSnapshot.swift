@@ -106,6 +106,7 @@ public struct Resolver: Sendable, Equatable {
     public var interfaceName: String?
     public var flags: [String]
     public var order: Int?
+    public var port: Int?
 
     public init(
         isScoped: Bool,
@@ -116,7 +117,8 @@ public struct Resolver: Sendable, Equatable {
         ifIndex: Int? = nil,
         interfaceName: String? = nil,
         flags: [String] = [],
-        order: Int? = nil
+        order: Int? = nil,
+        port: Int? = nil
     ) {
         self.isScoped = isScoped
         self.number = number
@@ -127,6 +129,7 @@ public struct Resolver: Sendable, Equatable {
         self.interfaceName = interfaceName
         self.flags = flags
         self.order = order
+        self.port = port
     }
 }
 

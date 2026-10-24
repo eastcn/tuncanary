@@ -7,6 +7,7 @@ enum SystemSuites {
     static var all: [TestSuite] {
         [
             DNSMessageTests.suite,
+            DNSGuardSplitDNSProberTests.suite,
             DNSMessageTests.clientSuite,
             MagicDNSTests.suite,
             MihomoControllerTests.suite,

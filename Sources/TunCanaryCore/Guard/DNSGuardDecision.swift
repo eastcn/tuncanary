@@ -90,6 +90,7 @@ public enum DNSGuardDecision: Sendable, Equatable {
     case compliant(phase: DNSGuardPhase)
     /// 阶段 B 需要先查询 VPN 探针，再用结果重新判定。
     case needsProbe(host: String, port: Int)
+    case needsSystemSplitProbe(host: String, publicProbe: DNSGuardPublicProbe?)
     /// 连续失败后的退避期。
     case backoff(phase: DNSGuardPhase, until: Date)
     /// 连接期写入次数达到上限，停用连接期接管。
@@ -164,20 +165,36 @@ public enum DNSGuardDecider {
             return .skip(phase: phase, reason: "两次采样之间保存的 DNS 发生变化")
         }
         let target = config.effectiveTargetDNS
-        if !service.savedDNS.isEmpty && DNSList.sameSet(service.savedDNS, target) {
-            return .compliant(phase: phase)
-        }
-        if let until = state.backoffUntil, until > now {
+        let compliant = !service.savedDNS.isEmpty && DNSList.sameSet(service.savedDNS, target)
+        let systemSplit = phase == .connected && config.connectedTakeover.probeMode == .systemSplitDNS
+        if compliant && !systemSplit { return .compliant(phase: phase) }
+        if !compliant, let until = state.backoffUntil, until > now {
             return .backoff(phase: phase, until: until)
         }
 
         if phase == .connected {
-            if state.connectedTakeoverSuspended {
+            if !compliant && state.connectedTakeoverSuspended {
                 return .skip(phase: phase, reason: "连接期接管已停用，等待 VPN 断开")
             }
             let recent = state.connectedWrites.filter { $0 <= now && now.timeIntervalSince($0) < takeoverWindow }
-            if recent.count >= config.connectedTakeover.maxWritesPerTenMinutes {
+            if !compliant && recent.count >= config.connectedTakeover.maxWritesPerTenMinutes {
                 return .suspendTakeover
+            }
+            if systemSplit {
+                guard let range = second.fakeIPRange else {
+                    return .skip(phase: phase, reason: "无法确认代理 fake-ip 网段，不接管系统分域 DNS")
+                }
+                if case .notRun = probe {
+                    let publicProbe = compliant ? DNSGuardPublicProbe(
+                        host: config.connectedTakeover.publicProbeHost, fakeIPRange: range) : nil
+                    return .needsSystemSplitProbe(host: config.connectedTakeover.intranetProbeHost,
+                                                  publicProbe: publicProbe)
+                }
+                if let problem = systemSplitProbeProblem(probe, range: range) {
+                    return .skip(phase: phase, reason: problem)
+                }
+                return compliant ? .compliant(phase: phase) : .write(DNSGuardWritePlan(
+                    serviceID: service.serviceID, phase: phase, currentDNS: service.savedDNS, targetDNS: target))
             }
             guard let port = second.proxyDNSPort else {
                 return .skip(phase: phase, reason: "代理配置缺少 DNS 端口，无法检查 VPN 探针")
@@ -201,7 +218,22 @@ public enum DNSGuardDecider {
             }
         }
 
+        if compliant { return .compliant(phase: phase) }
         return .write(DNSGuardWritePlan(serviceID: service.serviceID, phase: phase,
                                         currentDNS: service.savedDNS, targetDNS: target))
     }
+
+    static func systemSplitProbeProblem(_ result: DNSGuardProbeResult, range: IPv4CIDR) -> String? {
+        switch result {
+        case .answered(let answers) where answers.isEmpty:
+            return "系统分域 DNS 检查失败（内网探针无记录）"
+        case .answered(let answers) where answers.contains(where: range.contains):
+            return "系统分域 DNS 检查失败（内网探针返回 fake-ip）"
+        case .answered: return nil
+        case .noResponse: return "系统分域 DNS 检查失败（超时或无响应）"
+        case .failed(let reason): return "系统分域 DNS 检查失败（\(reason)）"
+        case .notRun: return "系统分域 DNS 检查未完成"
+        }
+    }
+
 }

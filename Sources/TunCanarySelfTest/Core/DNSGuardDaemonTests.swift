@@ -197,6 +197,7 @@ enum DNSGuardDaemonTests {
         private let lock = NSLock()
         var samples: [DNSGuardSample] = []
         var writeOutcome: DNSGuardWriteOutcome = .written
+        var writeSequence: [DNSGuardWriteOutcome] = []
         /// 依次返回；用完后重复最后一个。第一个用于写入前复读。
         var readBacks: [DNSGuardReadBack] = []
         var probeResult: DNSGuardProbeResult = .answered([IPv4("10.20.0.8")!])
@@ -206,6 +207,9 @@ enum DNSGuardDaemonTests {
         var events: [DNSGuardEvent] = []
         var writes: [DNSGuardWritePlan] = []
         var probes = 0
+        var systemProbes = 0
+        var publicProbes = 0
+        var systemProbeSequence: [DNSGuardProbeResult] = []
         private var readIndex = 0
 
         func sample() async -> DNSGuardSample { nextSample() }
@@ -218,7 +222,7 @@ enum DNSGuardDaemonTests {
         func write(_ plan: DNSGuardWritePlan) -> DNSGuardWriteOutcome {
             lock.lock(); defer { lock.unlock() }
             writes.append(plan)
-            return writeOutcome
+            return writeSequence.isEmpty ? writeOutcome : writeSequence.removeFirst()
         }
 
         func readBack(serviceID: String) -> DNSGuardReadBack {
@@ -229,6 +233,18 @@ enum DNSGuardDaemonTests {
         }
 
         func probe(host: String, port: Int) async -> DNSGuardProbeResult { recordProbe() }
+
+        func probeSystemSplitDNS(host: String, rules: [DNSGuardSplitDNSRule],
+                                 publicProbe: DNSGuardPublicProbe?) async -> DNSGuardProbeResult {
+            recordSystemProbe(publicProbe != nil)
+        }
+
+        private func recordSystemProbe(_ withPublic: Bool) -> DNSGuardProbeResult {
+            lock.lock(); defer { lock.unlock() }
+            systemProbes += 1
+            if withPublic { publicProbes += 1 }
+            return systemProbeSequence.isEmpty ? .answered([IPv4("10.20.0.8")!]) : systemProbeSequence.removeFirst()
+        }
 
         private func recordProbe() -> DNSGuardProbeResult {
             lock.lock(); defer { lock.unlock() }

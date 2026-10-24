@@ -35,9 +35,19 @@ public protocol DNSGuardWriting: Sendable {
     func readBack(serviceID: String) -> DNSGuardReadBack
 }
 
-/// 通过代理 DNS 查询 VPN 探针。
+/// 按配置选择代理 DNS 或系统分域 DNS 探针。
 public protocol DNSGuardProbing: Sendable {
     func probe(host: String, port: Int) async -> DNSGuardProbeResult
+    func probeSystemSplitDNS(host: String, rules: [DNSGuardSplitDNSRule],
+                             publicProbe: DNSGuardPublicProbe?) async -> DNSGuardProbeResult
+}
+
+public extension DNSGuardProbing {
+    /// 旧的注入实现保持兼容；不支持新模式时明确拒绝接管。
+    func probeSystemSplitDNS(host: String, rules: [DNSGuardSplitDNSRule],
+                             publicProbe: DNSGuardPublicProbe?) async -> DNSGuardProbeResult {
+        .failed("当前探针不支持系统分域 DNS")
+    }
 }
 
 /// 状态文件与事件日志的读写。
@@ -119,15 +129,27 @@ public struct DNSGuardRunner: Sendable {
         }
 
         var decision = DNSGuardDecider.decide(first: first, second: second, config: config, state: state, now: now())
-        if case .needsProbe(let host, let port) = decision {
+        var lastProbe = DNSGuardProbeResult.notRun
+        let request = decision
+        if Self.needsProbe(request) {
             for attempt in 0...Self.probeRetries {
                 if attempt > 0 { await sleep(Self.probeRetryInterval) }
-                let result = await prober.probe(host: host, port: port)
+                lastProbe = await probe(request)
                 decision = DNSGuardDecider.decide(first: first, second: second, config: config, state: state,
-                                                  probe: result, now: now())
-                // 带着探针结果再判定，只会得到写入或探针失败。探针通过就不再重查。
+                                                  probe: lastProbe, now: now())
                 guard case .skip = decision else { break }
             }
+        }
+        // 系统解析可能等待数秒，写入前再确认 VPN、主服务和保存值没有变化。
+        if config.connectedTakeover.probeMode == .systemSplitDNS, case .write(let plan) = decision,
+           plan.phase == .connected {
+            let latest = await sampler.sample()
+            decision = DNSGuardDecider.decide(first: second, second: latest, config: config,
+                                              state: state, probe: lastProbe, now: now())
+            if latest.tun != second.tun || latest.fakeIPRange != second.fakeIPRange {
+                decision = .skip(phase: .connected, reason: "系统解析期间代理 TUN 状态发生变化")
+            }
+            second = latest
         }
 
         var attempted = false
@@ -135,7 +157,7 @@ public struct DNSGuardRunner: Sendable {
         switch decision {
         case .skip(let phase, let reason):
             event = makeEvent(phase, .skipped, reason)
-        case .needsProbe:
+        case .needsProbe, .needsSystemSplitProbe:
             // 探针已经执行过，不会再次要求；按跳过处理以防万一。
             event = makeEvent(.connected, .skipped, "VPN 探针未完成")
         case .compliant(let phase):
@@ -153,7 +175,10 @@ public struct DNSGuardRunner: Sendable {
                                   "试运行：将把 \(DNSList.display(plan.currentDNS)) 改为 \(DNSList.display(plan.targetDNS))")
             } else {
                 attempted = true
-                event = await write(plan, state: &state)
+                let publicProbe = plan.phase == .connected && config.connectedTakeover.probeMode == .systemSplitDNS
+                    ? second.fakeIPRange.map { DNSGuardPublicProbe(
+                        host: config.connectedTakeover.publicProbeHost, fakeIPRange: $0) } : nil
+                event = await write(plan, state: &state, publicProbe: publicProbe)
             }
         }
 
@@ -174,7 +199,8 @@ public struct DNSGuardRunner: Sendable {
     }
 
     /// 写前复读、写入、读回，并更新失败计数。
-    private func write(_ plan: DNSGuardWritePlan, state: inout DNSGuardState) async -> DNSGuardEvent {
+    private func write(_ plan: DNSGuardWritePlan, state: inout DNSGuardState,
+                       publicProbe: DNSGuardPublicProbe?) async -> DNSGuardEvent {
         let before = writer.readBack(serviceID: plan.serviceID)
         guard before.primaryServiceID == plan.serviceID else {
             return makeEvent(plan.phase, .skipped, "写入前复读发现主网络服务已变化，放弃写入")
@@ -200,19 +226,82 @@ public struct DNSGuardRunner: Sendable {
             for attempt in 0..<Self.readBackAttempts {
                 if attempt > 0 { await sleep(Self.readBackInterval) }
                 last = writer.readBack(serviceID: plan.serviceID)
-                if Self.verified(last, target: plan.targetDNS) {
+                if last.primaryServiceID == plan.serviceID, Self.verified(last, target: plan.targetDNS) {
+                    if let publicProbe {
+                        let result = await prober.probeSystemSplitDNS(
+                            host: config.connectedTakeover.intranetProbeHost,
+                            rules: config.connectedTakeover.splitDNSRules, publicProbe: publicProbe)
+                        if let problem = DNSGuardDecider.systemSplitProbeProblem(result, range: publicProbe.fakeIPRange) {
+                            let reason = await restore(plan, before: before, reason: problem, state: &state)
+                            countFailure(&state)
+                            return makeEvent(plan.phase, .verifyFailed, reason)
+                        }
+                    }
                     state.consecutiveFailures = 0
                     state.backoffUntil = nil
                     return makeEvent(plan.phase, .written, nil)
                 }
             }
-            failure = makeEvent(plan.phase, .verifyFailed, Self.readBackProblem(last, target: plan.targetDNS))
+            let problem = last.primaryServiceID != plan.serviceID
+                ? "读回发现主网络服务已变化" : Self.readBackProblem(last, target: plan.targetDNS)
+            let reason = publicProbe == nil ? problem
+                : await restore(plan, before: before, reason: problem, state: &state)
+            failure = makeEvent(plan.phase, .verifyFailed, reason)
         }
+        countFailure(&state)
+        return failure
+    }
+
+    private static func needsProbe(_ decision: DNSGuardDecision) -> Bool {
+        switch decision {
+        case .needsProbe, .needsSystemSplitProbe: return true
+        default: return false
+        }
+    }
+
+    private func probe(_ decision: DNSGuardDecision) async -> DNSGuardProbeResult {
+        switch decision {
+        case .needsProbe(let host, let port): return await prober.probe(host: host, port: port)
+        case .needsSystemSplitProbe(let host, let publicProbe):
+            return await prober.probeSystemSplitDNS(host: host, rules: config.connectedTakeover.splitDNSRules,
+                                                    publicProbe: publicProbe)
+        default: return .notRun
+        }
+    }
+
+    private func countFailure(_ state: inout DNSGuardState) {
         state.consecutiveFailures += 1
         if state.consecutiveFailures >= Self.failureThreshold {
             state.backoffUntil = now().addingTimeInterval(Self.backoffDuration)
         }
-        return failure
+    }
+
+    /// 只恢复本次仍然持有的写入；主服务或保存值已被其他进程改动时，不覆盖它。
+    private func restore(_ plan: DNSGuardWritePlan, before: DNSGuardReadBack, reason: String,
+                         state: inout DNSGuardState) async -> String {
+        let current = writer.readBack(serviceID: plan.serviceID)
+        guard current.primaryServiceID == plan.serviceID,
+              current.savedDNS.map({ DNSList.sameSet($0, plan.targetDNS) }) == true else {
+            return reason + "；网络设置已变化，未覆盖其他进程的修改"
+        }
+        let rollback = DNSGuardWritePlan(serviceID: plan.serviceID, phase: plan.phase,
+                                        currentDNS: plan.targetDNS, targetDNS: plan.currentDNS)
+        let result = writer.write(rollback)
+        if case .changed = result { return reason + "；恢复前设置已变化，未覆盖其他进程的修改" }
+        state.connectedWrites.append(now())
+        guard case .written = result else { return reason + "；恢复写入前 DNS 失败" }
+        for attempt in 0..<Self.readBackAttempts {
+            if attempt > 0 { await sleep(Self.readBackInterval) }
+            let restored = writer.readBack(serviceID: plan.serviceID)
+            if restored.primaryServiceID == plan.serviceID,
+               restored.savedDNS.map({ DNSList.sameSet($0, plan.currentDNS) }) == true,
+               before.resolverDNS.map({ expected in
+                   restored.resolverDNS.map { DNSList.sameSet($0, expected) } == true
+               }) ?? true {
+                return reason + "；已恢复并读回写入前的 DNS"
+            }
+        }
+        return reason + "；已尝试恢复原 DNS，但读回未确认"
     }
 
     static func verified(_ readBack: DNSGuardReadBack, target: [String]) -> Bool {

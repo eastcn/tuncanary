@@ -100,6 +100,7 @@ public struct DNSGuardSystemWriter: DNSGuardWriting {
 public struct DNSGuardSystemProber: DNSGuardProbing {
     public var host: String
     public var timeout: TimeInterval
+    private let systemSplitDNS = DNSGuardSystemSplitDNSProber()
 
     public init(host: String = PulseConstants.mihomoDNSHost, timeout: TimeInterval = PulseConstants.mihomoDNSTimeout) {
         self.host = host
@@ -117,4 +118,10 @@ public struct DNSGuardSystemProber: DNSGuardProbing {
             }
         }
     }
+
+    public func probeSystemSplitDNS(host: String, rules: [DNSGuardSplitDNSRule],
+                                    publicProbe: DNSGuardPublicProbe?) async -> DNSGuardProbeResult {
+        await systemSplitDNS.probe(host: host, rules: rules, publicProbe: publicProbe)
+    }
+
 }

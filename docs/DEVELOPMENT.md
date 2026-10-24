@@ -78,3 +78,12 @@ TUNCANARY_GUARD_ROOT=/tmp/guard-root scripts/uninstall-dns-guard.sh
 版本号只在 `AppIdentity.swift` 修改。为版本增加 `docs/releases/v<版本>.md`，提交后推送对应的 `v<版本>` 标签。
 
 `Release` 工作流会检查标签与应用版本一致，执行离线测试，构建并校验应用签名。工作流先创建草稿，上传带架构名称的 ZIP 与 `SHA256SUMS.txt`，再公开发布。失败时不会公开不完整的草稿；已有正式版本不会被重跑覆盖。
+
+
+### 系统分域 DNS 的守护验证
+
+DNS 守护进程的 `systemSplitDNS` 模式仅核验用户已安装的分域配置。Core 负责规则匹配、
+配置兼容和接管判定，System 负责读取持久化文件、生效 resolver、系统查询和上游查询。
+菜单栏应用继续只读；只有单独安装的守护进程可以写主服务保存的 DNS。
+此模式写后复查内网和公网，失败时以主服务和保存值的复读为条件恢复原值，
+不创建分域文件、不修改代理配置、不扩大到显式代理的域名解析。

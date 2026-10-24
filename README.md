@@ -180,6 +180,38 @@ sudo scripts/uninstall-dns-guard.sh
 
 安装后，主网络 DNS 卡会显示守护进程是否安装，以及最近一次判定和写入的结果。守护进程的目标 DNS 和设置中的预期 DNS 不一致时，卡片会给出提示。
 
+### 已使用系统分域 DNS 时
+
+如果 VPN 内网已由 macOS 的 `/etc/resolver/` 分域解析，可以把守护进程配置中
+`connectedTakeover.probeMode` 设为 `systemSplitDNS`。默认值是 `proxyDNS`，旧配置行为保持不变。
+
+新模式不新增后台服务、不创建分域文件，也不修改代理配置。它先核验已有的 root 所有、
+普通用户不可写的分域文件、系统实际采用的 resolver，以及系统内网查询和本轮上游查询。
+默认 DNS 接管后，还会重查内网，并使用新的公网探针名称确认系统解析返回代理 fake-ip。
+写后验证失败时，只有主服务和 DNS 仍属于本次写入才恢复原值；不会覆盖其他进程的新设置。
+
+配置片段（全部为虚构示例，不能直接用于真实网络）：
+
+```json
+{
+  "connectedTakeover": {
+    "enabled": true,
+    "intranetProbeHost": "probe.vpn.example",
+    "probeMode": "systemSplitDNS",
+    "splitDNSRules": [
+      {"domain": "vpn.example", "servers": ["192.0.2.53", "192.0.2.54"]}
+    ],
+    "publicProbeHost": "www.google.com",
+    "maxWritesPerTenMinutes": 3
+  }
+}
+```
+
+`splitDNSRules` 必须与已安装的分域文件一致，至少覆盖内网探针。需要保留的更具体公网例外
+也应列入规则，公网探针必须位于这些分域之外。文件缺失、地址不一致、更具体规则覆盖探针、
+内网查询失败或公网未返回 fake-ip 时均不视为保护正常。此模式覆盖使用 macOS 系统解析器的应用，
+不修复显式 HTTP/SOCKS 代理自行解析内网域名的行为。安装与修改 root 配置仍由用户操作。
+
 ## 隐私
 
 - 菜单栏应用只读取状态，不修改 DNS、TUN、代理或 VPN 的设置。只有单独安装的 DNS 守护进程会修改网络服务保存的 DNS，见上一节。
